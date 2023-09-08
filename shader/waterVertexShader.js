@@ -22,7 +22,10 @@ varying vec3 vViewPosition;
 #include <logdepthbuf_pars_vertex>
 #include <clipping_planes_pars_vertex>
 
+varying vec2 vUv;
+
 void main() {
+    vUv = uv;
 
     vec2 cellSize = vec2( 1.0 / WIDTH, 1.0 / WIDTH );
 
