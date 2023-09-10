@@ -1,8 +1,14 @@
 import heightmapFragmentShader from '../shader/heightmapFragmentShader.js';
 import waterVertexShader from '../shader/waterVertexShader.js';
 import waterFragmentShader from '../shader/waterFragmentShader.js';
+import terrainVertexShader from '../shader/terrainVertexShader.js';
+import terrainFragmentShader from '../shader/terrainFragmentShader.js';
 import smoothFragmentShader from '../shader/smoothFragmentShader.js';
 import readWaterLevelFragmentShader from '../shader/readWaterLevelFragmentShader.js';
+import prefix from '../shader/prefix.js';
+import velocity from '../shader/step/velocity.js';
+import height from '../shader/step/height.js';
+import advect from '../shader/step/advect.js';
 
 import * as THREE from 'three';
 
@@ -24,15 +30,16 @@ const BOUNDS_HALF = BOUNDS * 0.5;
 let container, stats;
 let camera, scene, renderer, controls;
 let material;
+let waterMaterial;
 let mouseMoved = false;
 const mouseCoords = new THREE.Vector2();
 const raycaster = new THREE.Raycaster();
 
 let waterMesh;
+let terrainMesh;
 let meshRay;
 let gpuCompute;
 let heightmapVariable;
-let waterUniforms;
 let smoothShader;
 let readWaterLevelShader;
 let readWaterLevelRenderTarget;
@@ -47,8 +54,9 @@ let setilView = false;
 
 const simplex = new SimplexNoise();
 
+let step_2_height;
+let step_3_velocity;
 
-console.log(GeoTIFF); 
 let parseGeoTiff = async ()=>{
         
     const rawTiff = await GeoTIFF.fromUrl('/asset/daejeon_1.tif');
@@ -66,7 +74,7 @@ let parseGeoTiff = async ()=>{
     const bbox = image.getBoundingBox();
     
     const data = await image.readRasters({ interleave: true });
-    console.log(data);
+    //console.log(data);
 
 
     init(data);
@@ -125,8 +133,8 @@ function init(data) {
         // W Pressed: Toggle wireframe
         if ( event.keyCode === 87 ) {
 
-            waterMesh.material.wireframe = ! waterMesh.material.wireframe;
-            waterMesh.material.needsUpdate = true;
+            terrainMesh.material.wireframe = ! terrainMesh.material.wireframe;
+            terrainMesh.material.needsUpdate = true;
 
         }
 
@@ -192,8 +200,7 @@ function init(data) {
 function initWater(data) {
     
     const texture = new THREE.TextureLoader().load( "/asset/output_daejeon_proc2.png" );
-
-    const materialColor = 0x555555;
+ 
 
     const geometry = new THREE.PlaneGeometry( BOUNDS, BOUNDS, BOUNDS - 1, BOUNDS - 1 );
     
@@ -207,34 +214,58 @@ function initWater(data) {
                 'setilView' :  {value: false },
             }
         ] ),
+        vertexShader: terrainVertexShader,
+        fragmentShader: terrainFragmentShader,
+        transparent: true
+    } );
+    waterMaterial = new THREE.ShaderMaterial( {
+        uniforms: THREE.UniformsUtils.merge( [
+            THREE.ShaderLib[ 'phong' ].uniforms,
+            {
+                'heightmap': { value: null },
+            }
+        ] ),
         vertexShader: waterVertexShader,
-        fragmentShader: waterFragmentShader//THREE.ShaderChunk[ 'meshphong_frag' ]
+        fragmentShader: waterFragmentShader,
+        transparent: true,
 
     } );
     //const material = new THREE.MeshPhongMaterial({map:texture});
 
     
     material.lights = true;
+    waterMaterial.lights = true;
     //material.map = texture; 
     // Material attributes from THREE.MeshPhongMaterial
     // Sets the uniforms with the material values
-    material.uniforms[ 'diffuse' ].value = new THREE.Color( materialColor );
+    material.uniforms[ 'diffuse' ].value = new THREE.Color( 0x555555 );
     material.uniforms[ 'specular' ].value = new THREE.Color( 0x111111 );
     material.uniforms[ 'shininess' ].value = Math.max( 50, 1e-4 );
     material.uniforms[ 'opacity' ].value = material.opacity;
+    waterMaterial.uniforms[ 'diffuse' ].value = new THREE.Color( 0x0040C0 );
+    waterMaterial.uniforms[ 'specular' ].value = new THREE.Color( 0x111111 );
+    waterMaterial.uniforms[ 'shininess' ].value = Math.max( 50, 1e-4 );
+    waterMaterial.uniforms[ 'opacity' ].value = 1.0;
 
     // Defines
     material.defines.WIDTH = WIDTH.toFixed( 1 );
     material.defines.BOUNDS = BOUNDS.toFixed( 1 );
+    waterMaterial.defines.WIDTH = WIDTH.toFixed( 1 );
+    waterMaterial.defines.BOUNDS = BOUNDS.toFixed( 1 );
+ 
 
-    waterUniforms = material.uniforms;
-
-    waterMesh = new THREE.Mesh( geometry, material );
+    waterMesh = new THREE.Mesh( geometry, waterMaterial );
     waterMesh.rotation.x = - Math.PI / 2;
     waterMesh.matrixAutoUpdate = false;
     waterMesh.updateMatrix();
 
+    terrainMesh = new THREE.Mesh( geometry, material );
+    terrainMesh.rotation.x = - Math.PI / 2;
+    terrainMesh.matrixAutoUpdate = false;
+    terrainMesh.updateMatrix();
+
     scene.add( waterMesh );
+    scene.add( terrainMesh );
 
     // THREE.Mesh just for mouse raycasting
     const geometryRay = new THREE.PlaneGeometry( BOUNDS, BOUNDS, 1, 1 );
@@ -258,15 +289,27 @@ function initWater(data) {
     const heightmap0 = gpuCompute.createTexture();
 
     fillTexture( heightmap0, data );
-    heightmap0.flipY = true;
-    heightmapVariable = gpuCompute.addVariable( 'heightmap', heightmapFragmentShader, heightmap0 );
+    heightmap0.flipY = true; //위성사진 y값을 거꿀로 바꿈
+    heightmapVariable = gpuCompute.addVariable( 'heightmap', prefix+'\n'+advect, heightmap0 );
 
     gpuCompute.setVariableDependencies( heightmapVariable, [ heightmapVariable ] );
 
-    heightmapVariable.material.uniforms[ 'mousePos' ] = { value: new THREE.Vector2( 10000, 10000 ) };
-    heightmapVariable.material.uniforms[ 'mouseSize' ] = { value: 20.0 };
-    heightmapVariable.material.uniforms[ 'viscosityConstant' ] = { value: 0.98 };
-    heightmapVariable.material.uniforms[ 'heightCompensation' ] = { value: 0 };
+    let uniforms = {
+        'mousePos': { value: new THREE.Vector2( 10000, 10000 ) },
+        'mouseSize': { value: 20.0 },
+        'viscosityConstant': { value: 0.98 },
+        'heightCompensation': { value: 0 },
+        'unit': { value: 1/BOUNDS },
+        'dt': { value: 0.25 },
+        'gravity': { value: 9.81 },
+        'manningCoefficient': { value: 0.07 },
+        'minFluxArea': { value: 0.01 },
+        'sourceWaterHeight': { value: 57 },
+        'sourceWaterVelocity': { value: 1.5 },
+        'drainageAmount': { value: -1 },
+    }
+
+    heightmapVariable.material.uniforms = uniforms;
     heightmapVariable.material.defines.BOUNDS = BOUNDS.toFixed( 1 );
 
     const error = gpuCompute.init();
@@ -275,6 +318,12 @@ function initWater(data) {
         console.error( error );
 
     }
+
+    let stepUniform = Object.assign({}, uniforms);
+    stepUniform.heightmap = { value: null };
+    step_2_height = gpuCompute.createShaderMaterial('\nuniform sampler2D heightmap;\n' + prefix + height, stepUniform);
+    step_3_velocity = gpuCompute.createShaderMaterial('\nuniform sampler2D heightmap;\n' +  prefix + velocity, stepUniform);
+ 
 
     // Create compute shader to smooth the water surface and velocity
     //smoothShader = gpuCompute.createShaderMaterial( smoothFragmentShader, { smoothTexture: { value: null } } );
@@ -304,41 +353,18 @@ function initWater(data) {
 
 function fillTexture( texture, data ) {
 
-    const waterMaxHeight = 10;
-
-    function noise( x, y ) {
-
-        let multR = waterMaxHeight;
-        let mult = 0.025;
-        let r = 0;
-        for ( let i = 0; i < 15; i ++ ) {
-
-            r += multR * simplex.noise( x * mult, y * mult );
-            multR *= 0.53 + 0.025 * i;
-            mult *= 1.25;
-
-        }
-
-        return r;
-
-    }
-
     const pixels = texture.image.data;
 
     let p = 0;
-    //let cnt = BOUNDS * BOUNDS - 1;
     let cnt = 0;
     for ( let j = 0; j < BOUNDS; j ++ ) {
 
         for ( let i = 0; i < BOUNDS; i ++ ) {
 
-            //const x = i * 128 / BOUNDS;
-            //const y = j * 128 / BOUNDS;
-
-            pixels[ p + 0 ] = data[cnt]//noise(x, y);
-            pixels[ p + 1 ] = 0//pixels[ p + 0 ];
+            pixels[ p + 0 ] = 0;//noise(x, y);
+            pixels[ p + 1 ] = 0;//pixels[ p + 0 ];
             pixels[ p + 2 ] = 0;
-            pixels[ p + 3 ] = 0;
+            pixels[ p + 3 ] = data[cnt];
 
             p+=4;
             cnt++;
@@ -520,7 +546,23 @@ function render() {
     // }
 
     // Do the gpu computation
-    //gpuCompute.compute();
+    gpuCompute.compute();
+
+    const currentRenderTarget = gpuCompute.getCurrentRenderTarget( heightmapVariable );
+    const alternateRenderTarget = gpuCompute.getAlternateRenderTarget( heightmapVariable );
+
+    step_3_velocity.uniforms[ 'heightmap' ].value = currentRenderTarget.texture;
+    gpuCompute.doRenderTarget( step_3_velocity, alternateRenderTarget );
+    step_3_velocity.uniforms[ 'heightmap' ].value = alternateRenderTarget.texture;
+    gpuCompute.doRenderTarget( step_3_velocity, currentRenderTarget );
+    
+    step_2_height.uniforms[ 'heightmap' ].value = currentRenderTarget.texture;
+    gpuCompute.doRenderTarget( step_2_height, alternateRenderTarget );
+    step_2_height.uniforms[ 'heightmap' ].value = alternateRenderTarget.texture;
+    gpuCompute.doRenderTarget( step_2_height, currentRenderTarget );
+
+   
+
 
     // if ( spheresEnabled ) {
 
@@ -529,7 +571,8 @@ function render() {
     // }
 
     // Get compute output in custom uniform
-    waterUniforms[ 'heightmap' ].value = gpuCompute.getCurrentRenderTarget( heightmapVariable ).texture;
+    material.uniforms[ 'heightmap' ].value = gpuCompute.getCurrentRenderTarget( heightmapVariable ).texture;
+    waterMaterial.uniforms[ 'heightmap' ].value = gpuCompute.getCurrentRenderTarget( heightmapVariable ).texture;
 
     controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
 

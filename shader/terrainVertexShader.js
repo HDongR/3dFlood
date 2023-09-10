@@ -34,7 +34,10 @@ void main() {
 
     // # include <beginnormal_vertex>
     // Compute normal from heightmap
-    vec3 objectNormal = vec3(1.0, 1.0, 1.0 );
+    vec3 objectNormal = vec3(
+        ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).w - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).w ) * WIDTH / BOUNDS,
+        ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).w - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).w ) * WIDTH / BOUNDS,
+        1.0 );
     //<beginnormal_vertex>
 
     #include <morphnormal_vertex>
@@ -49,11 +52,8 @@ void main() {
 #endif
 
     //# include <begin_vertex>
-    vec4 data = texture2D( heightmap, uv ); 
-
-    float height = data.z > 0.0 ? data.z + data.w : 0.0;
-
-    vec3 transformed = vec3( position.x, position.y, height);
+    float heightValue = texture2D( heightmap, uv ).w;
+    vec3 transformed = vec3( position.x, position.y, heightValue);
     //<begin_vertex>
 
     #include <morphtarget_vertex>
