@@ -48,11 +48,12 @@ let setilView = false;
 const simplex = new SimplexNoise();
 
 
-console.log(GeoTIFF); 
 let parseGeoTiff = async ()=>{
         
     const rawTiff = await GeoTIFF.fromUrl('/asset/daejeon_1.tif');
+    const buildingTiff = await GeoTIFF.fromUrl('/asset/building.tif');
     const image = await rawTiff.getImage();
+    const buildingImage = await buildingTiff.getImage();
     const width = image.getWidth();
     const height = image.getHeight();
     const tileWidth = image.getTileWidth();
