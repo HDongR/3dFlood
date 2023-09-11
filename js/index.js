@@ -51,18 +51,16 @@ const spheres = [];
 let spheresEnabled = true;
 
 let setilView = false;
+let buildingView = false;
 
 const simplex = new SimplexNoise();
 
 let step_2_height;
 let step_3_velocity;
 
-let parseGeoTiff = async ()=>{
-        
-    const rawTiff = await GeoTIFF.fromUrl('/asset/daejeon_1.tif');
-    const buildingTiff = await GeoTIFF.fromUrl('/asset/building.tif');
+async function parseTif(src){
+    const rawTiff = await GeoTIFF.fromUrl(src);
     const image = await rawTiff.getImage();
-    const buildingImage = await buildingTiff.getImage();
     const width = image.getWidth();
     const height = image.getHeight();
     const tileWidth = image.getTileWidth();
@@ -76,10 +74,14 @@ let parseGeoTiff = async ()=>{
     const bbox = image.getBoundingBox();
     
     const data = await image.readRasters({ interleave: true });
-    //console.log(data);
+    return data;
+}
 
-
-    init(data);
+async function parseGeoTiff(){
+    const tifData = await parseTif('/asset/daejeon_1.tif');
+    const buildingData = await parseTif('/asset/building_1.tif');
+    
+    init(tifData, buildingData);
     animate();
 }
 
@@ -87,7 +89,7 @@ parseGeoTiff();
 
 
 
-function init(data) {
+function init(data, buildingData) {
     
     container = document.createElement( 'div' );
     document.body.appendChild( container );
@@ -173,12 +175,21 @@ function init(data) {
         'setilView': setilView
     };
 
+    const buildingController = {
+        'buildingView': buildingView
+    };
+
     //gui.add( effectController, 'mouseSize', 1.0, 100.0, 1.0 ).onChange( valuesChanger );
     //gui.add( effectController, 'viscosity', 0.9, 0.999, 0.001 ).onChange( valuesChanger );
     gui.add(setilController, 'setilView' ).name('위성지도').onChange( (check)=>{
         console.log(check)
 
         material.uniforms[ 'setilView' ].value = check;
+    } );
+    gui.add(buildingController, 'buildingView' ).name('건물').onChange( (check)=>{
+        console.log(check)
+
+        material.uniforms[ 'buildingView' ].value = check;
     } );
     // const buttonSmooth = {
     //     smoothWater: function () {
@@ -190,7 +201,7 @@ function init(data) {
     // gui.add( buttonSmooth, 'smoothWater' );
 
 
-    initWater(data);
+    initWater(data, buildingData);
 
     //createSpheres();
 
@@ -199,7 +210,7 @@ function init(data) {
 }
 
 
-function initWater(data) {
+function initWater(data, buildingData) {
     
     const texture = new THREE.TextureLoader().load( "/asset/output_daejeon_proc2.png" );
  
@@ -214,6 +225,8 @@ function initWater(data) {
                 'heightmap': { value: null },
                 'setilmap' : {value: texture},
                 'setilView' :  {value: false },
+                'buildingmap' : {value: null},
+                'buildingView' :  {value: false },
             }
         ] ),
         vertexShader: terrainVertexShader,
@@ -289,12 +302,18 @@ function initWater(data) {
     }
 
     const heightmap0 = gpuCompute.createTexture();
+    const buildingmap = gpuCompute.createTexture();
 
-    fillTexture( heightmap0, data );
+    fillTexture( heightmap0, data);
+    fillTextureBuilding( buildingmap, buildingData);
+    
     heightmap0.flipY = true; //위성사진 y값을 거꿀로 바꿈
+    buildingmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
     heightmapVariable = gpuCompute.addVariable( 'heightmap', prefix+'\n'+advect, heightmap0 );
 
     gpuCompute.setVariableDependencies( heightmapVariable, [ heightmapVariable ] );
+
+    material.uniforms[ 'buildingmap' ].value = buildingmap;
 
     let uniforms = {
         'mousePos': { value: new THREE.Vector2( 10000, 10000 ) },
@@ -306,9 +325,10 @@ function initWater(data) {
         'gravity': { value: 9.81 },
         'manningCoefficient': { value: 0.07 },
         'minFluxArea': { value: 0.01 },
-        'sourceWaterHeight': { value: 57 },
-        'sourceWaterVelocity': { value: 1.5 },
+        'sourceWaterHeight': { value: 49 },
+        'sourceWaterVelocity': { value: 0.5 },
         'drainageAmount': { value: -1 },
+        'buildingmap' : {value: buildingmap},
     }
 
     heightmapVariable.material.uniforms = uniforms;
@@ -323,8 +343,9 @@ function initWater(data) {
 
     let stepUniform = Object.assign({}, uniforms);
     stepUniform.heightmap = { value: null };
-    step_2_height = gpuCompute.createShaderMaterial('\nuniform sampler2D heightmap;\n' + prefix + height, stepUniform);
-    step_3_velocity = gpuCompute.createShaderMaterial('\nuniform sampler2D heightmap;\n' +  prefix + velocity, stepUniform);
+    stepUniform.buildingmap = { value: null };
+    step_2_height = gpuCompute.createShaderMaterial('uniform sampler2D heightmap;\n' + prefix + height, stepUniform);
+    step_3_velocity = gpuCompute.createShaderMaterial('uniform sampler2D heightmap;\n' +  prefix + velocity, stepUniform);
  
 
     // Create compute shader to smooth the water surface and velocity
@@ -367,6 +388,35 @@ function fillTexture( texture, data ) {
             pixels[ p + 1 ] = 0;//pixels[ p + 0 ];
             pixels[ p + 2 ] = 0;
             pixels[ p + 3 ] = data[cnt];
+
+            p+=4;
+            cnt++;
+
+        }
+
+    }
+
+}
+
+function fillTextureBuilding( texture, data ) {
+
+    const pixels = texture.image.data;
+
+    let p = 0;
+    let cnt = 0;
+    for ( let j = 0; j < BOUNDS; j ++ ) {
+
+        for ( let i = 0; i < BOUNDS; i ++ ) {
+            let height = data[cnt];
+            if(isNaN( height )){
+                height = 0;
+            }else{
+                height = height;
+            }
+            pixels[ p + 0 ] = height;
+            pixels[ p + 1 ] = 0;
+            pixels[ p + 2 ] = 0;
+            pixels[ p + 3 ] = 0;
 
             p+=4;
             cnt++;
@@ -574,6 +624,7 @@ function render() {
 
     // Get compute output in custom uniform
     material.uniforms[ 'heightmap' ].value = gpuCompute.getCurrentRenderTarget( heightmapVariable ).texture;
+     
     waterMaterial.uniforms[ 'heightmap' ].value = gpuCompute.getCurrentRenderTarget( heightmapVariable ).texture;
 
     controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true

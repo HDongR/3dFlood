@@ -1,5 +1,5 @@
 export default `
-//uniform sampler2D heightmap;
+uniform sampler2D buildingmap;
 uniform float unit, time, dt;
 uniform float sourceWaterHeight;
 uniform float sourceWaterVelocity;
@@ -26,28 +26,32 @@ vec4 simData (vec2 pos) {
 
     if (pos.x < minExtent) {
         vec4 borderData = texture2D(heightmap, vec2(minExtent, clamp(pos.y, minExtent, maxExtent)));
+        vec4 borderData_building = texture2D(buildingmap, vec2(minExtent, clamp(pos.y, minExtent, maxExtent)));
         data.x = 0.0;
         data.z = borderData.z;
-        data.w = borderData.w;
+        data.w = borderData.w + borderData_building.x;
     } else if (pos.x > maxExtent) {
         vec4 borderData = texture2D(heightmap, vec2(maxExtent, clamp(pos.y, minExtent, maxExtent)));
+        vec4 borderData_building = texture2D(buildingmap, vec2(maxExtent, clamp(pos.y, minExtent, maxExtent)));
         data.x = 0.0;
         data.z = borderData.z;
-        data.w = borderData.w;
+        data.w = borderData. w+ borderData_building.x;
     }
 
     if (pos.y < minExtent) {
         vec4 borderData = texture2D(heightmap, vec2(clamp(pos.x, minExtent, maxExtent), minExtent));
+        vec4 borderData_building = texture2D(buildingmap, vec2(clamp(pos.x, minExtent, maxExtent), minExtent));
         data.y = sourceWaterHeight > borderData.w ? sourceWaterVelocity : 0.0;
         data.z = sourceWaterHeight - borderData.w;
-        data.w = borderData.w;
+        data.w = borderData.w + borderData_building.x;
     } else if (pos.y > maxExtent) {
         vec4 borderData = texture2D(heightmap, vec2(clamp(pos.x, minExtent, maxExtent), maxExtent));
+        vec4 borderData_building = texture2D(buildingmap, vec2(clamp(pos.x, minExtent, maxExtent), maxExtent));
         data.y = max(borderData.y, 0.0);
         data.z = borderData.z;
-        data.w = borderData.w;
+        data.w = borderData.w + borderData_building.x;
     }
-
+    
     return data;
 }
 

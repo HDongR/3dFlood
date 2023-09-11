@@ -1,5 +1,7 @@
 export default `
 uniform sampler2D heightmap;
+uniform sampler2D buildingmap;
+uniform bool buildingView;
 
 #define PHONG
 
@@ -53,7 +55,15 @@ void main() {
 
     //# include <begin_vertex>
     float heightValue = texture2D( heightmap, uv ).w;
-    vec3 transformed = vec3( position.x, position.y, heightValue);
+    float building_height = texture2D( buildingmap, uv ).x;
+    float r_height = 0.;
+    if(buildingView){
+        r_height = heightValue + building_height;
+    }else{
+        r_height = heightValue;
+    }
+
+    vec3 transformed = vec3( position.x, position.y, r_height);
     //<begin_vertex>
 
     #include <morphtarget_vertex>
