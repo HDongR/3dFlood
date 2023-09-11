@@ -6,8 +6,10 @@ uniform vec3 emissive;
 uniform vec3 specular;
 uniform float shininess;
 uniform float opacity;
- 
+
+uniform bool setilView;
 uniform sampler2D heightmap;
+uniform sampler2D setilmap; 
 varying vec2 vUv;
 
 #include <common>
@@ -74,16 +76,11 @@ void main() {
 	#include <premultiplied_alpha_fragment>
 	#include <dithering_fragment>
 	
-	vec4 c = texture2D(heightmap, vUv);
-     
-    float alpha = 0.85;
-    if (c.z < 0.0) {
-        alpha = 0.0;
-    };
-
- 
-	gl_FragColor = vec4(gl_FragColor.rgb, alpha);
-	
+	if(setilView){
+		gl_FragColor.xyz = vec3(texture2D( setilmap, vUv));
+	}else{
+		gl_FragColor.xyz = gl_FragColor.rgb;
+	}
 	
 
 }
