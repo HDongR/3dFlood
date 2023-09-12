@@ -35,14 +35,14 @@ let terrainMesh;
 let meshRay;
 let gpuCompute;
 let heightmapVariable;
+let heightmapVariable2;
+let heightmapVariable3;
 
 let setilView = false;
 let buildingView = false;
 
 let heightShader;
 let velocityShader;
-let heightRenderTarget;
-let velocityRenderTarget;
 
 async function parseTif(src){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -264,28 +264,16 @@ async function initWater(data, buildingData) {
     originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
     let heightMapSamplerVal = '\nuniform sampler2D heightmap;\n';
     heightmapVariable = gpuCompute.addVariable( 'heightmap', prefix+prefix2+advect, heightmap0 );
+    heightmapVariable2 = gpuCompute.addVariable( 'heightmap', prefix+prefix2+height, heightmap0 );
+    heightmapVariable3 = gpuCompute.addVariable( 'heightmap', prefix+prefix2+velocity, heightmap0 );
 
     gpuCompute.setVariableDependencies( heightmapVariable, [ heightmapVariable ] );
+    gpuCompute.setVariableDependencies( heightmapVariable2, [ heightmapVariable2 ] );
+    gpuCompute.setVariableDependencies( heightmapVariable3, [ heightmapVariable3 ] );
 
     terrainMaterial.uniforms[ 'originmap' ].value = originmap;
 
-    // Create compute shader to read water level
-    heightShader = gpuCompute.createShaderMaterial(prefix+heightMapSamplerVal+prefix2+height, {
-        heightmap: { value: null }
-    } );
-    heightShader.defines.BOUNDS = BOUNDS.toFixed( 1 );
-    heightRenderTarget = gpuCompute.createRenderTarget();
-    heightShader.uniforms.heightmap.value = heightRenderTarget.texture;
-
-    // Create compute shader to read water level
-    velocityShader = gpuCompute.createShaderMaterial(prefix+heightMapSamplerVal+prefix2+velocity, {
-        heightmap: { value: null }
-    } );
-    
-
-    velocityShader.defines.BOUNDS = BOUNDS.toFixed( 1 );
-    
-    velocityRenderTarget = gpuCompute.createRenderTarget();
+     
 
     let uniforms = {
         'mousePos': { value: new THREE.Vector2( 10000, 10000 ) },
@@ -303,7 +291,11 @@ async function initWater(data, buildingData) {
     }
 
     heightmapVariable.material.uniforms = uniforms;
+    heightmapVariable2.material.uniforms = uniforms;
+    heightmapVariable3.material.uniforms = uniforms;
     heightmapVariable.material.defines.BOUNDS = BOUNDS.toFixed( 1 );
+    heightmapVariable2.material.defines.BOUNDS = BOUNDS.toFixed( 1 );
+    heightmapVariable3.material.defines.BOUNDS = BOUNDS.toFixed( 1 );
 
     const error = gpuCompute.init();
     if ( error !== null ) { 
@@ -363,25 +355,16 @@ function animate() {
 
 }
 
-let currentTextureIndex = 0;
-
 function render() {
     // Do the gpu computation
     gpuCompute.compute();
-
-    const currentRenderTarget = gpuCompute.getCurrentRenderTarget( heightmapVariable );
-    const alternateRenderTarget = gpuCompute.getAlternateRenderTarget( heightmapVariable );
-    
-    heightShader.uniforms['heightmap'].value = alternateRenderTarget.texture;
-    gpuCompute.doRenderTarget( heightShader, currentRenderTarget );
-
-    //velocityShader.uniforms['heightmap'].value = alternateRenderTarget.texture;
-    //gpuCompute.doRenderTarget( velocityShader, currentRenderTarget );
+ 
 
     // Get compute output in custom uniform
-    terrainMaterial.uniforms[ 'heightmap' ].value = alternateRenderTarget.texture;
-    waterMaterial.uniforms[ 'heightmap' ].value = alternateRenderTarget.texture;
+    waterMaterial.uniforms[ 'heightmap' ].value = gpuCompute.getCurrentRenderTarget( heightmapVariable2 ).texture;
 
+    terrainMaterial.uniforms[ 'heightmap' ].value = gpuCompute.getCurrentRenderTarget( heightmapVariable3 ).texture;
+    
     controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
 
     // Render

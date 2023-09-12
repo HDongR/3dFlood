@@ -45,6 +45,6 @@ vec4 simulationStep() {
     if (H(X1) < 0.0 || H(X2) < 0.0) newVelocity.x = 0.0;
     if (H(Y1) < 0.0 || H(Y2) < 0.0) newVelocity.y = 0.0;
 
-    return vec4(newVelocity, 1., T(here));
+    return vec4(newVelocity, H(here), T(here));
 }
 `
