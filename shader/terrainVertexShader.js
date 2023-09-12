@@ -1,6 +1,6 @@
 export default `
 uniform sampler2D heightmap;
-uniform sampler2D buildingmap;
+uniform sampler2D originmap;
 uniform bool buildingView;
 
 #define PHONG
@@ -36,10 +36,19 @@ void main() {
 
     // # include <beginnormal_vertex>
     // Compute normal from heightmap
-    vec3 objectNormal = vec3(
-        ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).w - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).w ) * WIDTH / BOUNDS,
-        ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).w - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).w ) * WIDTH / BOUNDS,
-        1.0 );
+    
+    vec3 objectNormal;
+    if(buildingView){
+        objectNormal = vec3(
+            ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).w - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).w ) * WIDTH / BOUNDS,
+            ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).w - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).w ) * WIDTH / BOUNDS,
+            1.0 );
+    }else{
+        objectNormal = vec3(
+            ( texture2D( originmap, uv + vec2( - cellSize.x, 0 ) ).w - texture2D( originmap, uv + vec2( cellSize.x, 0 ) ).w ) * WIDTH / BOUNDS,
+            ( texture2D( originmap, uv + vec2( 0, - cellSize.y ) ).w - texture2D( originmap, uv + vec2( 0, cellSize.y ) ).w ) * WIDTH / BOUNDS,
+            1.0 );
+    }
     //<beginnormal_vertex>
 
     #include <morphnormal_vertex>
@@ -53,14 +62,12 @@ void main() {
 
 #endif
 
-    //# include <begin_vertex>
-    float heightValue = texture2D( heightmap, uv ).w;
-    float building_height = texture2D( buildingmap, uv ).x;
-    float r_height = 0.;
+    //# include <begin_vertex> 
+    float r_height;
     if(buildingView){
-        r_height = heightValue + building_height;
+        r_height = texture2D( heightmap, uv ).w;
     }else{
-        r_height = heightValue;
+        r_height = texture2D( originmap, uv ).w;
     }
 
     vec3 transformed = vec3( position.x, position.y, r_height);

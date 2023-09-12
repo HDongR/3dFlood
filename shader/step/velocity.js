@@ -24,7 +24,7 @@ vec4 simulationStep() {
 
     float n = manningCoefficient;
     //n *= texture2D(frictionMap, pos).x;
-    n = 0.03;
+    n = 0.001;
     vec2 frictionSlope = V(here) * length(V(here)) * pow(n, 2.0) / pow(H(here), 4.0/3.0);
 
     vec2 totalSlope = slope + frictionSlope;
@@ -45,6 +45,6 @@ vec4 simulationStep() {
     if (H(X1) < 0.0 || H(X2) < 0.0) newVelocity.x = 0.0;
     if (H(Y1) < 0.0 || H(Y2) < 0.0) newVelocity.y = 0.0;
 
-    return vec4(newVelocity, H(here), T(here));
+    return vec4(newVelocity, 1., T(here));
 }
 `
