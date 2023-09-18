@@ -258,6 +258,17 @@ async function setCompute(data, buildingData){
 
     }
 
+    const heightmap = gpuCompute.createTexture();
+    const originmap = gpuCompute.createTexture(); 
+
+    fillTexture( heightmap, originmap, data, buildingData); 
+    
+    heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
+    originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
+
+    terrainMaterial.uniforms[ 'originmap' ].value = originmap;
+
+     
     let uniforms = {
         'heightmap': { value: null },
         'mousePos': { value: new THREE.Vector2( 10000, 10000 ) },
@@ -277,12 +288,6 @@ async function setCompute(data, buildingData){
     myFilter1 = gpuCompute.createShaderMaterial( height, uniforms );
     myFilter2 = gpuCompute.createShaderMaterial( velocity, uniforms );
     
-    const heightmap = gpuCompute.createTexture();
-    const originmap = gpuCompute.createTexture(); 
-    fillTexture( heightmap, originmap, data, buildingData); 
-    heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
-    originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
-    
     myFilter1.uniforms.heightmap.value = null;
     myFilter2.uniforms.heightmap.value = null;
     
@@ -293,6 +298,7 @@ async function setCompute(data, buildingData){
 
     
     terrainMaterial.uniforms[ 'originmap' ].value = originmap;
+
 
     const error = gpuCompute.init();
     if ( error !== null ) { 
