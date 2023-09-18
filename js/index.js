@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
-import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
+import { GPUComputationRenderer } from '../js/jsm/misc/GPUComputationRenderer.js';
 
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -35,14 +35,12 @@ let terrainMesh;
 let meshRay;
 let gpuCompute;
 let heightmapVariable;
+let heightmapVariable2;
+let heightmapVariable3;
 
 let setilView = false;
 let buildingView = false;
 
-let heightShader;
-let velocityShader;
-let heightRenderTarget;
-let velocityRenderTarget;
 
 async function parseTif(src){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -152,8 +150,8 @@ async function init(data, buildingData) {
         terrainMaterial.uniforms[ 'buildingView' ].value = check;
     } );
 
-    await initWater(data, buildingData);
-
+    await initWater();
+    await setCompute(data, buildingData);
 }
 
 function loadTexture(src){
@@ -164,7 +162,7 @@ function loadTexture(src){
     });
 }
 
-async function initWater(data, buildingData) {
+async function initWater() {
     
     let setilmapTexture = await loadTexture('/asset/output_daejeon_proc2.png');
  
@@ -243,8 +241,13 @@ async function initWater(data, buildingData) {
     meshRay.matrixAutoUpdate = false;
     meshRay.updateMatrix();
     scene.add( meshRay );
+}
 
+let myFilter1, myFilter2;
+let myRenderTarget1, myRenderTarget2;
 
+async function setCompute(data, buildingData){
+    
     // Creates the gpu computation class and sets it up
 
     gpuCompute = new GPUComputationRenderer( BOUNDS, BOUNDS, renderer );
@@ -255,39 +258,8 @@ async function initWater(data, buildingData) {
 
     }
 
-    const heightmap0 = gpuCompute.createTexture();
-    const originmap = gpuCompute.createTexture(); 
-
-    fillTexture( heightmap0, originmap, data, buildingData); 
-    
-    heightmap0.flipY = true; //위성사진 y값을 거꿀로 바꿈
-    originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
-    let heightMapSamplerVal = '\nuniform sampler2D heightmap;\n';
-    heightmapVariable = gpuCompute.addVariable( 'heightmap', prefix+prefix2+advect, heightmap0 );
-
-    gpuCompute.setVariableDependencies( heightmapVariable, [ heightmapVariable ] );
-
-    terrainMaterial.uniforms[ 'originmap' ].value = originmap;
-
-    // Create compute shader to read water level
-    heightShader = gpuCompute.createShaderMaterial(prefix+heightMapSamplerVal+prefix2+height, {
-        heightmap: { value: null }
-    } );
-    heightShader.defines.BOUNDS = BOUNDS.toFixed( 1 );
-    heightRenderTarget = gpuCompute.createRenderTarget();
-    heightShader.uniforms.heightmap.value = heightRenderTarget.texture;
-
-    // Create compute shader to read water level
-    velocityShader = gpuCompute.createShaderMaterial(prefix+heightMapSamplerVal+prefix2+velocity, {
-        heightmap: { value: null }
-    } );
-    
-
-    velocityShader.defines.BOUNDS = BOUNDS.toFixed( 1 );
-    
-    velocityRenderTarget = gpuCompute.createRenderTarget();
-
     let uniforms = {
+        'heightmap': { value: null },
         'mousePos': { value: new THREE.Vector2( 10000, 10000 ) },
         'mouseSize': { value: 20.0 },
         'viscosityConstant': { value: 0.98 },
@@ -299,11 +271,28 @@ async function initWater(data, buildingData) {
         'minFluxArea': { value: 0.01 },
         'sourceWaterHeight': { value: 49 },
         'sourceWaterVelocity': { value: 0.5 },
-        'drainageAmount': { value: -1},
+        'drainageAmount': { value: 0},
     }
 
-    heightmapVariable.material.uniforms = uniforms;
-    heightmapVariable.material.defines.BOUNDS = BOUNDS.toFixed( 1 );
+    myFilter1 = gpuCompute.createShaderMaterial( height, uniforms );
+    myFilter2 = gpuCompute.createShaderMaterial( velocity, uniforms );
+    
+    const heightmap = gpuCompute.createTexture();
+    const originmap = gpuCompute.createTexture(); 
+    fillTexture( heightmap, originmap, data, buildingData); 
+    heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
+    originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
+    
+    myFilter1.uniforms.heightmap.value = null;
+    myFilter2.uniforms.heightmap.value = null;
+    
+    myRenderTarget1 = gpuCompute.createRenderTarget();
+    myRenderTarget2 = gpuCompute.createRenderTarget();
+
+    gpuCompute.renderTexture( heightmap, myRenderTarget2);
+
+    
+    terrainMaterial.uniforms[ 'originmap' ].value = originmap;
 
     const error = gpuCompute.init();
     if ( error !== null ) { 
@@ -363,27 +352,35 @@ function animate() {
 
 }
 
-let currentTextureIndex = 0;
+function flip(rt1, rt2){
+    var t = rt1;
+    rt1 = rt2;
+    rt2 = t;
+}
 
 function render() {
-    // Do the gpu computation
-    gpuCompute.compute();
-
-    const currentRenderTarget = gpuCompute.getCurrentRenderTarget( heightmapVariable );
-    const alternateRenderTarget = gpuCompute.getAlternateRenderTarget( heightmapVariable );
     
-    heightShader.uniforms['heightmap'].value = alternateRenderTarget.texture;
-    gpuCompute.doRenderTarget( heightShader, currentRenderTarget );
+    
+    myFilter1.uniforms.heightmap.value = myRenderTarget2.texture;
+    gpuCompute.doRenderTarget( myFilter1, myRenderTarget1 );
 
-    //velocityShader.uniforms['heightmap'].value = alternateRenderTarget.texture;
-    //gpuCompute.doRenderTarget( velocityShader, currentRenderTarget );
+    myFilter2.uniforms.heightmap.value = myRenderTarget1.texture;
+    gpuCompute.doRenderTarget( myFilter2, myRenderTarget2 );
+  
 
-    // Get compute output in custom uniform
-    terrainMaterial.uniforms[ 'heightmap' ].value = alternateRenderTarget.texture;
-    waterMaterial.uniforms[ 'heightmap' ].value = alternateRenderTarget.texture;
+
+    terrainMaterial.uniforms[ 'heightmap' ].value = myRenderTarget2.texture
+    waterMaterial.uniforms[ 'heightmap' ].value = myRenderTarget2.texture
 
     controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
 
+
+    //flip(myRenderTarget1, myRenderTarget2);
+
     // Render
+    //renderer.setRenderTarget( null );
     renderer.render( scene, camera );
+
+
+    
 }
