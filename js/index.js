@@ -29,6 +29,7 @@ let camera, scene, renderer, controls;
 let terrainMaterial;
 let waterMaterial;
 const mouseCoords = new THREE.Vector2();
+const raycaster = new THREE.Raycaster();
 
 let waterMesh;
 let terrainMesh;
@@ -37,7 +38,7 @@ let gpuCompute;
 
 let setilView = false;
 let buildingView = false;
-
+let mouseMoved = false;
 
 async function parseTif(src){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -102,7 +103,7 @@ async function init(data, buildingData, streamData) {
 
     controls.screenSpacePanning = false;
 
-    controls.minDistance = 100;
+    controls.minDistance = 1;
     controls.maxDistance = 500;
 
     controls.maxPolarAngle = Math.PI;
@@ -123,6 +124,15 @@ async function init(data, buildingData, streamData) {
 
         }
 
+    } );
+
+    container.addEventListener( 'pointermove', (event)=>{
+        if ( event.isPrimary === false ) return;
+        let x = event.clientX;
+        let y = event.clientY;
+        mouseCoords.set( ( x / renderer.domElement.clientWidth ) * 2 - 1, - ( y / renderer.domElement.clientHeight ) * 2 + 1 );
+        mouseMoved = true;
+        //console.log(mouseCoords);
     } );
 
     window.addEventListener( 'resize', onWindowResize );
@@ -233,12 +243,12 @@ async function initWater() {
     scene.add( terrainMesh );
 
     // THREE.Mesh just for mouse raycasting
-    const geometryRay = new THREE.PlaneGeometry( BOUNDS, BOUNDS, 1, 1 );
-    meshRay = new THREE.Mesh( geometryRay, new THREE.MeshBasicMaterial( { color: 0xFFFFFF, visible: false } ) );
-    meshRay.rotation.x = - Math.PI / 2;
-    meshRay.matrixAutoUpdate = false;
-    meshRay.updateMatrix();
-    scene.add( meshRay );
+    // const geometryRay = new THREE.PlaneGeometry( BOUNDS, BOUNDS, 1, 1 );
+    // meshRay = new THREE.Mesh( geometryRay, new THREE.MeshBasicMaterial( { color: 0xFFFFFF, visible: true } ) );
+    // meshRay.rotation.x = - Math.PI / 2;
+    // meshRay.matrixAutoUpdate = false;
+    // meshRay.updateMatrix();
+    // scene.add( meshRay );
 }
 
 let step = [];
@@ -348,19 +358,19 @@ function fillTexture( texture, originmap, data, buildingData, streamData) {
             }
 
             let streamHeight = streamData[cnt];
-            if(isNaN(streamHeight)){
-                streamHeight = 0;
-            }
+            
             if(streamHeight != 0){
                 streamHeight = 1;
+            }else{
+                streamHeight = -0.0001;
             }
 
-            pixels[ p + 0 ] = 0;//noise(x, y);
-            pixels[ p + 1 ] = 0;//pixels[ p + 0 ];
-            // pixels[ p + 2 ] = streamHeight;
-            // pixels[ p + 3 ] = data[cnt] + buildingHeight;
-            pixels[ p + 2 ] = 1;
-            pixels[ p + 3 ] = 1;
+            pixels[ p + 0 ] = 100000;//noise(x, y);
+            pixels[ p + 1 ] = 100000;//pixels[ p + 0 ];
+            pixels[ p + 2 ] = streamHeight;
+            pixels[ p + 3 ] = data[cnt] + buildingHeight;
+            //pixels[ p + 2 ] = 1;
+            //pixels[ p + 3 ] = 1;
 
             originpixcels[ p + 0 ] = 0;//noise(x, y);
             originpixcels[ p + 1 ] = 0;//pixels[ p + 0 ];
@@ -395,30 +405,54 @@ function animate() {
 
 }
 
-function getReadPixcel(log, rt){
-    renderer.readRenderTargetPixels( rt, 0, 0, 4, 1, readWaterLevelImage );
-    const pixels = new Float32Array( readWaterLevelImage.buffer );
-    console.log(log, pixels);
+function getReadPixcel(log, rt, debug){
+    if(debug){
+        renderer.readRenderTargetPixels( rt, 268, 257, 4, 1, readWaterLevelImage );
+        const pixels = new Float32Array( readWaterLevelImage.buffer );
+        console.log(log, pixels);
+    }
 }
 
+let rx = 0;
+let ry = 0;
 function render() {
+    // if ( mouseMoved ) {
+
+    //     raycaster.setFromCamera( mouseCoords, camera );
+    //     const intersects = raycaster.intersectObject( terrainMesh );
+    //     if ( intersects.length > 0 ) {
+    //         let pixelX = Math.round(intersects[0].uv.x * 512);
+    //         let pixelY = Math.round(intersects[0].uv.y * 512);
+
+    //         //const point = intersects[ 0 ].point;
+    //         console.log(pixelX, pixelY);
+    //         rx = pixelX;
+    //         ry = pixelY;
+    //         //getReadPixcel()
+    //         //uniforms[ 'mousePos' ].value.set( point.x, point.z );
+    //     } else {
+    //         //uniforms[ 'mousePos' ].value.set( 10000, 10000 );
+    //     } 
+    // }
+
+
     let nextRenderIndex = currentRenderIndex == 0 ? 1 : 0;
 
     let rt1 = renderTargets[currentRenderIndex];
     let rt2 = renderTargets[nextRenderIndex];
 
     myFilter1.uniforms.heightmap.value = rt2.texture;
-    getReadPixcel('init', rt2);
+    getReadPixcel('init', rt2, true);
     gpuCompute.doRenderTarget( myFilter1, rt1 );
 
     myFilter2.uniforms.heightmap.value = rt1.texture;
-    getReadPixcel('advect', rt1);
+    //getReadPixcel('advect', rt1, false);
     gpuCompute.doRenderTarget( myFilter2, rt2 );
 
     myFilter3.uniforms.heightmap.value = rt2.texture;
-    getReadPixcel('height', rt2);
+    //getReadPixcel('height', rt2, false);
     gpuCompute.doRenderTarget( myFilter3, rt1 );
-    getReadPixcel('velocity', rt1);
+    //getReadPixcel('velocity', rt1, false);
 
     terrainMaterial.uniforms[ 'heightmap' ].value = rt2.texture
     waterMaterial.uniforms[ 'heightmap' ].value = rt2.texture
@@ -430,4 +464,5 @@ function render() {
     renderer.render( scene, camera );
 
     currentRenderIndex = currentRenderIndex == 0 ? 1 : 0;
+    
 }

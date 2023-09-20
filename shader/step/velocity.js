@@ -38,12 +38,14 @@ vec4 simData (vec2 pos) {
 
     if (pos.y < minExtent) {
         vec4 borderData = texture2D(heightmap, vec2(clamp(pos.x, minExtent, maxExtent), minExtent));
-        data.y = sourceWaterHeight > borderData.w ? sourceWaterVelocity : 0.0;
-        data.z = sourceWaterHeight - borderData.w;
+        //data.y = sourceWaterHeight > borderData.w ? sourceWaterVelocity : 0.0;
+        //data.z = sourceWaterHeight - borderData.w;
+        data.y = 0.0;
+        data.z = borderData.z;
         data.w = borderData.w;
     } else if (pos.y > maxExtent) {
         vec4 borderData = texture2D(heightmap, vec2(clamp(pos.x, minExtent, maxExtent), maxExtent));
-        data.y = max(borderData.y, 0.0);
+        data.y = 0.0;
         data.z = borderData.z;
         data.w = borderData.w;
     }
@@ -104,10 +106,10 @@ void main(void) {
     posTop = uv + vec2( 0.0, unit );
     posBottom = uv + vec2( 0.0, - unit );
 
-    //gl_FragColor = simulationStep();
+    gl_FragColor = simulationStep();
 
-    vec4 data = texture2D(heightmap, pos);
+    //vec4 data = texture2D(heightmap, pos);
 
-    gl_FragColor = vec4(data.x, data.y, data.z+1., data.w);
+    //gl_FragColor = vec4(data.x, data.y, data.z+1., data.w);
 }
 `
