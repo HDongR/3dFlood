@@ -34,9 +34,6 @@ let waterMesh;
 let terrainMesh;
 let meshRay;
 let gpuCompute;
-let heightmapVariable;
-let heightmapVariable2;
-let heightmapVariable3;
 
 let setilView = false;
 let buildingView = false;
@@ -64,8 +61,9 @@ async function parseTif(src){
 async function parseGeoTiff(){
     const tifData = await parseTif('/asset/daejeon_1.tif');
     const buildingData = await parseTif('/asset/building_1.tif');
+    const streamData = await parseTif('/asset/stream_1.tif');
     
-    await init(tifData, buildingData);
+    await init(tifData, buildingData, streamData);
     animate();
 }
 
@@ -73,7 +71,7 @@ parseGeoTiff();
 
 
 
-async function init(data, buildingData) {
+async function init(data, buildingData, streamData) {
     
     container = document.createElement( 'div' );
     document.body.appendChild( container );
@@ -151,7 +149,7 @@ async function init(data, buildingData) {
     } );
 
     await initWater();
-    await setCompute(data, buildingData);
+    await setCompute(data, buildingData, streamData);
 }
 
 function loadTexture(src){
@@ -243,10 +241,16 @@ async function initWater() {
     scene.add( meshRay );
 }
 
-let myFilter1, myFilter2;
+let step = [];
+let myFilter1, myFilter2, myFilter3;
 let myRenderTarget1, myRenderTarget2;
+let renderTargets;
+let currentRenderIndex = 0;
 
-async function setCompute(data, buildingData){
+let readWaterLevelRenderTarget;
+let readWaterLevelImage;
+
+async function setCompute(data, buildingData, streamData){
     
     // Creates the gpu computation class and sets it up
 
@@ -261,7 +265,7 @@ async function setCompute(data, buildingData){
     const heightmap = gpuCompute.createTexture();
     const originmap = gpuCompute.createTexture(); 
 
-    fillTexture( heightmap, originmap, data, buildingData); 
+    fillTexture( heightmap, originmap, data, buildingData, streamData); 
     
     heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
     originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
@@ -285,15 +289,24 @@ async function setCompute(data, buildingData){
         'drainageAmount': { value: 0},
     }
 
-    myFilter1 = gpuCompute.createShaderMaterial( height, uniforms );
-    myFilter2 = gpuCompute.createShaderMaterial( velocity, uniforms );
+    myFilter1 = gpuCompute.createShaderMaterial( advect, uniforms );
+    myFilter2 = gpuCompute.createShaderMaterial( height, uniforms );
+    myFilter3 = gpuCompute.createShaderMaterial( velocity, uniforms );
+
+    step.push(myFilter1);
+    step.push(myFilter2);
+    step.push(myFilter3);
     
     myFilter1.uniforms.heightmap.value = null;
     myFilter2.uniforms.heightmap.value = null;
+    myFilter3.uniforms.heightmap.value = null;
     
     myRenderTarget1 = gpuCompute.createRenderTarget();
     myRenderTarget2 = gpuCompute.createRenderTarget();
 
+    renderTargets = [myRenderTarget1, myRenderTarget2];
+    
+    gpuCompute.renderTexture( heightmap, myRenderTarget1);
     gpuCompute.renderTexture( heightmap, myRenderTarget2);
 
     
@@ -304,9 +317,22 @@ async function setCompute(data, buildingData){
     if ( error !== null ) { 
         console.error( error );
     }
+
+
+    readWaterLevelImage = new Float32Array( 4 * 1 * 4 );
+
+    readWaterLevelRenderTarget = new THREE.WebGLRenderTarget( 4, 1, {
+        wrapS: THREE.ClampToEdgeWrapping,
+        wrapT: THREE.ClampToEdgeWrapping,
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+        format: THREE.RGBAFormat,
+        type: THREE.UnsignedByteType,
+        depthBuffer: false
+    } );
 }
 
-function fillTexture( texture, originmap, data, buildingData ) {
+function fillTexture( texture, originmap, data, buildingData, streamData) {
 
     const pixels = texture.image.data;
     const originpixcels = originmap.image.data;
@@ -320,10 +346,21 @@ function fillTexture( texture, originmap, data, buildingData ) {
             if(isNaN( buildingHeight )){
                 buildingHeight = 0;
             }
+
+            let streamHeight = streamData[cnt];
+            if(isNaN(streamHeight)){
+                streamHeight = 0;
+            }
+            if(streamHeight != 0){
+                streamHeight = 1;
+            }
+
             pixels[ p + 0 ] = 0;//noise(x, y);
             pixels[ p + 1 ] = 0;//pixels[ p + 0 ];
-            pixels[ p + 2 ] = 0;
-            pixels[ p + 3 ] = data[cnt] + buildingHeight;
+            // pixels[ p + 2 ] = streamHeight;
+            // pixels[ p + 3 ] = data[cnt] + buildingHeight;
+            pixels[ p + 2 ] = 1;
+            pixels[ p + 3 ] = 1;
 
             originpixcels[ p + 0 ] = 0;//noise(x, y);
             originpixcels[ p + 1 ] = 0;//pixels[ p + 0 ];
@@ -358,35 +395,39 @@ function animate() {
 
 }
 
-function flip(rt1, rt2){
-    var t = rt1;
-    rt1 = rt2;
-    rt2 = t;
+function getReadPixcel(log, rt){
+    renderer.readRenderTargetPixels( rt, 0, 0, 4, 1, readWaterLevelImage );
+    const pixels = new Float32Array( readWaterLevelImage.buffer );
+    console.log(log, pixels);
 }
 
 function render() {
-    
-    
-    myFilter1.uniforms.heightmap.value = myRenderTarget2.texture;
-    gpuCompute.doRenderTarget( myFilter1, myRenderTarget1 );
+    let nextRenderIndex = currentRenderIndex == 0 ? 1 : 0;
 
-    myFilter2.uniforms.heightmap.value = myRenderTarget1.texture;
-    gpuCompute.doRenderTarget( myFilter2, myRenderTarget2 );
-  
+    let rt1 = renderTargets[currentRenderIndex];
+    let rt2 = renderTargets[nextRenderIndex];
 
+    myFilter1.uniforms.heightmap.value = rt2.texture;
+    getReadPixcel('init', rt2);
+    gpuCompute.doRenderTarget( myFilter1, rt1 );
 
-    terrainMaterial.uniforms[ 'heightmap' ].value = myRenderTarget2.texture
-    waterMaterial.uniforms[ 'heightmap' ].value = myRenderTarget2.texture
+    myFilter2.uniforms.heightmap.value = rt1.texture;
+    getReadPixcel('advect', rt1);
+    gpuCompute.doRenderTarget( myFilter2, rt2 );
+
+    myFilter3.uniforms.heightmap.value = rt2.texture;
+    getReadPixcel('height', rt2);
+    gpuCompute.doRenderTarget( myFilter3, rt1 );
+    getReadPixcel('velocity', rt1);
+
+    terrainMaterial.uniforms[ 'heightmap' ].value = rt2.texture
+    waterMaterial.uniforms[ 'heightmap' ].value = rt2.texture
 
     controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
-
-
-    //flip(myRenderTarget1, myRenderTarget2);
 
     // Render
     //renderer.setRenderTarget( null );
     renderer.render( scene, camera );
 
-
-    
+    currentRenderIndex = currentRenderIndex == 0 ? 1 : 0;
 }

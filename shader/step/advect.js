@@ -14,24 +14,6 @@ vec2 pos, posLeft, posRight, posTop, posBottom;
 #define L(D)  H(D) + T(D)  // water level
 
 vec4 simulationStep();
-vec4 simData (vec2 pos);
-
-vec4 simulationStep() {
-    vec4 here = simData(pos);
-
-    if (H(here) <= 0.0) return vec4(V(here), H(here), T(here));
-
-    vec4 origin = simData(pos - dt * V(here));
-    float newHeight = H(origin);
-    vec2 newVelocity = V(origin);
-
-    if (newHeight <= 0.0) {
-        newHeight = H(here);
-        newVelocity = vec2(0.0, 0.0);
-    }
-
-    return vec4(newVelocity, newHeight, T(here));
-}
 
 vec4 simData (vec2 pos) {
     vec4 data = texture2D(heightmap, pos);
@@ -66,6 +48,23 @@ vec4 simData (vec2 pos) {
     return data;
 }
 
+vec4 simulationStep() {
+    vec4 here = simData(pos);
+
+    if (H(here) <= 0.0) return vec4(V(here), H(here), T(here));
+
+    vec4 origin = simData(pos - dt * V(here));
+    float newHeight = H(origin);
+    vec2 newVelocity = V(origin);
+
+    if (newHeight <= 0.0) {
+        newHeight = H(here);
+        newVelocity = vec2(0.0, 0.0);
+    }
+
+    return vec4(newVelocity, newHeight, T(here));
+}
+
 void main(void) {
     vec2 uv = gl_FragCoord.xy * unit;
 
@@ -75,7 +74,11 @@ void main(void) {
     posTop = uv + vec2( 0.0, unit );
     posBottom = uv + vec2( 0.0, - unit );
 
-    gl_FragColor = simulationStep();
+    //gl_FragColor = simulationStep();
+
+    vec4 data = texture2D(heightmap, pos);
+
+    gl_FragColor = vec4(data.x, data.y, data.z+1., data.w);
 }
 
 `
