@@ -16,6 +16,7 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { GPUComputationRenderer } from '../js/jsm/misc/GPUComputationRenderer.js';
 
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Water } from './water/water2.js';
 
 // Texture width for simulation
 const WIDTH = 128;
@@ -32,6 +33,7 @@ const mouseCoords = new THREE.Vector2();
 const raycaster = new THREE.Raycaster();
 
 let waterMesh;
+let water;
 let terrainMesh;
 let meshRay;
 let gpuCompute;
@@ -91,6 +93,9 @@ async function init(data, buildingData, streamData) {
     sun2.position.set( - 100, 350, - 200 );
     scene.add( sun2 );
 
+    const geometry = new THREE.BoxGeometry( 512, 512, 512 ); 
+     
+
     renderer = new THREE.WebGLRenderer();
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
@@ -126,14 +131,7 @@ async function init(data, buildingData, streamData) {
 
     } );
 
-    container.addEventListener( 'pointermove', (event)=>{
-        if ( event.isPrimary === false ) return;
-        let x = event.clientX;
-        let y = event.clientY;
-        mouseCoords.set( ( x / renderer.domElement.clientWidth ) * 2 - 1, - ( y / renderer.domElement.clientHeight ) * 2 + 1 );
-        mouseMoved = true;
-        //console.log(mouseCoords);
-    } );
+    container.addEventListener( 'pointermove', onMouseMove);
 
     window.addEventListener( 'resize', onWindowResize );
 
@@ -147,6 +145,10 @@ async function init(data, buildingData, streamData) {
         'buildingView': buildingView
     };
 
+    let waterView = true;
+    const waterController = {
+        'waterView' : waterView
+    }
     gui.add(setilController, 'setilView' ).name('위성지도').onChange( (check)=>{
         console.log(check)
 
@@ -156,6 +158,11 @@ async function init(data, buildingData, streamData) {
         console.log(check)
 
         terrainMaterial.uniforms[ 'buildingView' ].value = check;
+    } );
+    gui.add(waterController, 'waterView' ).name('물').onChange( (check)=>{
+        console.log(check)
+
+        waterMesh.visible = check;
     } );
 
     await initWater();
@@ -175,7 +182,7 @@ async function initWater() {
     let setilmapTexture = await loadTexture('/asset/output_daejeon_proc2.png');
  
 
-    const geometry = new THREE.PlaneGeometry( BOUNDS, BOUNDS, BOUNDS - 1, BOUNDS - 1 );
+    const geometry = new THREE.PlaneGeometry( BOUNDS, BOUNDS, BOUNDS-1, BOUNDS-1);
     
     // material: make a THREE.ShaderMaterial clone of THREE.MeshPhongMaterial, with customized vertex shader
     terrainMaterial = new THREE.ShaderMaterial( {
@@ -193,6 +200,21 @@ async function initWater() {
         fragmentShader: terrainFragmentShader,
         transparent: true
     } );
+
+
+    const flowMap = await loadTexture( '/js/water/Water_1_M_Flow.jpg' );
+
+    water = new Water( geometry, {
+        scale: 1,
+        textureWidth: BOUNDS,
+        textureHeight: BOUNDS,
+        flowMap: flowMap,
+    } );
+    water.rotation.x = - Math.PI / 2;
+    water.matrixAutoUpdate = false;
+    water.updateMatrix();
+
+
     waterMaterial = new THREE.ShaderMaterial( {
         uniforms: THREE.UniformsUtils.merge( [
             THREE.ShaderLib[ 'phong' ].uniforms,
@@ -239,7 +261,8 @@ async function initWater() {
     terrainMesh.matrixAutoUpdate = false;
     terrainMesh.updateMatrix();
 
-    scene.add( waterMesh );
+    //scene.add( waterMesh );
+    scene.add(water);
     scene.add( terrainMesh );
 
     // THREE.Mesh just for mouse raycasting
@@ -282,14 +305,14 @@ async function setCompute(data, buildingData, streamData){
 
     terrainMaterial.uniforms[ 'originmap' ].value = originmap;
 
-     
+    
     let uniforms = {
         'heightmap': { value: null },
         'mousePos': { value: new THREE.Vector2( 10000, 10000 ) },
         'mouseSize': { value: 20.0 },
         'viscosityConstant': { value: 0.98 },
         'heightCompensation': { value: 0 },
-        'unit': { value: 1/BOUNDS },
+        'unit': { value: 1.0/BOUNDS.toFixed(1) },
         'dt': { value: 0.25 },
         'gravity': { value: 9.81 },
         'manningCoefficient': { value: 0.07 },
@@ -298,11 +321,12 @@ async function setCompute(data, buildingData, streamData){
         'sourceWaterVelocity': { value: 0.5 },
         'drainageAmount': { value: 0},
     }
+    
 
     myFilter1 = gpuCompute.createShaderMaterial( advect, uniforms );
     myFilter2 = gpuCompute.createShaderMaterial( height, uniforms );
     myFilter3 = gpuCompute.createShaderMaterial( velocity, uniforms );
-
+    
     step.push(myFilter1);
     step.push(myFilter2);
     step.push(myFilter3);
@@ -406,16 +430,93 @@ function animate() {
 }
 
 function getReadPixcel(log, rt, debug){
-    if(debug){
-        renderer.readRenderTargetPixels( rt, 268, 257, 4, 1, readWaterLevelImage );
-        const pixels = new Float32Array( readWaterLevelImage.buffer );
-        console.log(log, pixels);
+    // if(debug){
+    //     renderer.readRenderTargetPixels( rt, 268, 257, 4, 1, readWaterLevelImage );
+    //     const pixels = new Float32Array( readWaterLevelImage.buffer );
+    //     console.log(log, pixels);
+    // }
+}
+
+ 
+const mouse = new THREE.Vector2();
+const onClickPosition = new THREE.Vector2();
+
+function onMouseMove( evt ) {
+    return;
+    evt.preventDefault();
+
+    const array = getMousePosition( container, evt.clientX, evt.clientY );
+    onClickPosition.fromArray( array );
+
+    const intersects = getIntersects( onClickPosition, scene.children );
+
+    if ( intersects.length > 0 && intersects[ 0 ].uv ) {
+
+        const uv = intersects[ 0 ].uv;
+        console.log(uv.x, uv.y);
+        //intersects[ 0 ].object.material.map.transformUv( uv );
+        //console.log(uv.x, uv.y);
+        //canvas.setCrossPosition( uv.x, uv.y );
+
+    }
+
+}
+
+function getMousePosition( dom, x, y ) {
+
+    const rect = dom.getBoundingClientRect();
+    return [ ( x - rect.left ) / rect.width, ( y - rect.top ) / rect.height ];
+
+}
+
+function getIntersects( point, objects ) {
+
+    mouse.set( ( point.x * 2 ) - 1, - ( point.y * 2 ) + 1 );
+
+    raycaster.setFromCamera( mouse, camera );
+
+    return raycaster.intersectObjects( objects, false );
+
+}
+
+function compute(){
+    for(let i=0; i<10; ++i){
+        let nextRenderIndex = currentRenderIndex == 0 ? 1 : 0;
+
+        let rt1 = renderTargets[currentRenderIndex];
+        let rt2 = renderTargets[nextRenderIndex];
+
+        myFilter1.uniforms.heightmap.value = rt2.texture;
+        //getReadPixcel('init', rt2, true);
+        gpuCompute.doRenderTarget( myFilter1, rt1 );
+
+        myFilter2.uniforms.heightmap.value = rt1.texture;
+        //getReadPixcel('advect', rt1, false);
+        gpuCompute.doRenderTarget( myFilter2, rt2 );
+
+        myFilter3.uniforms.heightmap.value = rt2.texture;
+        //getReadPixcel('height', rt2, false);
+        gpuCompute.doRenderTarget( myFilter3, rt1 );
+        //getReadPixcel('velocity', rt1, false);
+        
+        currentRenderIndex = currentRenderIndex == 0 ? 1 : 0;
     }
 }
 
-let rx = 0;
-let ry = 0;
 function render() {
+    
+    compute();
+
+    terrainMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
+    waterMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
+    water.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
+    
+    controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+
+    // Render
+    //renderer.setRenderTarget( null );
+    renderer.render( scene, camera );
+
     // if ( mouseMoved ) {
 
     //     raycaster.setFromCamera( mouseCoords, camera );

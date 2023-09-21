@@ -76,11 +76,10 @@ void main() {
 	
 	vec4 c = texture2D(heightmap, vUv);
      
-    float alpha = 0.85;
+    float alpha = 1.0;
     if (c.z < 0.0) {
         alpha = 0.0;
-    };
-
+    }
  
 	gl_FragColor = vec4(gl_FragColor.rgb, alpha);
 	

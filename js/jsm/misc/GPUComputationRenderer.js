@@ -5,6 +5,7 @@ import {
 	FloatType,
 	Mesh,
 	NearestFilter,
+	LinearFilter,
 	PlaneGeometry,
 	RGBAFormat,
 	Scene,
