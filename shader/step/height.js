@@ -80,7 +80,7 @@ vec4 simulationStep() {
         float fluxArea = max(H(here), minFluxArea);
         newHeight = H(here) - fluxArea * velocityDivergence * dt;
         //newHeight -= drainageAmount;
-        //newHeight = 0.5;
+        newHeight = 0.5;
         newHeight = max(-0.00001, newHeight);
         newHeight = min(H(here) * 2.0, newHeight);
     }
