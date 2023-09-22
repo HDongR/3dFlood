@@ -16,7 +16,8 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { GPUComputationRenderer } from '../js/jsm/misc/GPUComputationRenderer.js';
 
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Water } from './water/water2.js';
+import { Water } from './water/water.js';
+import { Sky } from './water/Sky.js';
 
 // Texture width for simulation
 const WIDTH = 128;
@@ -34,6 +35,7 @@ const raycaster = new THREE.Raycaster();
 
 let waterMesh;
 let water;
+let sun;
 let terrainMesh;
 let meshRay;
 let gpuCompute;
@@ -84,6 +86,7 @@ async function init(data, buildingData, streamData) {
     camera.lookAt( 0, 0, 0 );
 
     scene = new THREE.Scene();
+    //scene.fog = new THREE.Fog( 0xcccccc, 10, 300 );
 
     const sun = new THREE.DirectionalLight( 0xFFFFFF, 3.0 );
     sun.position.set( 300, 400, 175 );
@@ -162,7 +165,7 @@ async function init(data, buildingData, streamData) {
     gui.add(waterController, 'waterView' ).name('물').onChange( (check)=>{
         console.log(check)
 
-        waterMesh.visible = check;
+        water.visible = check;
     } );
 
     await initWater();
@@ -202,14 +205,28 @@ async function initWater() {
     } );
 
 
-    const flowMap = await loadTexture( '/js/water/Water_1_M_Flow.jpg' );
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.5;
 
-    water = new Water( geometry, {
-        scale: 1,
-        textureWidth: BOUNDS,
-        textureHeight: BOUNDS,
-        flowMap: flowMap,
-    } );
+    sun = new THREE.Vector3();
+
+    let waterNormals = await loadTexture( '/js/water/waternormals.jpg' );
+    waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
+
+    water = new Water(
+        geometry,
+        {
+            textureWidth: BOUNDS,
+            textureHeight: BOUNDS,
+            waterNormals: waterNormals,
+            sunDirection: new THREE.Vector3(),
+            sunColor: 0xffffff,
+            waterColor: 0x001e0f,
+            distortionScale: 3.7,
+            fog: scene.fog !== undefined
+        }
+    );
+
     water.rotation.x = - Math.PI / 2;
     water.matrixAutoUpdate = false;
     water.updateMatrix();
@@ -272,6 +289,48 @@ async function initWater() {
     // meshRay.matrixAutoUpdate = false;
     // meshRay.updateMatrix();
     // scene.add( meshRay );
+
+    const sky = new Sky();
+    sky.scale.setScalar( 10000 );
+    scene.add( sky );
+
+    const skyUniforms = sky.material.uniforms;
+
+    skyUniforms[ 'turbidity' ].value = 10;
+    skyUniforms[ 'rayleigh' ].value = 2;
+    skyUniforms[ 'mieCoefficient' ].value = 0.005;
+    skyUniforms[ 'mieDirectionalG' ].value = 0.8;
+
+    const parameters = {
+        elevation: 2,
+        azimuth: 180
+    };
+
+    const pmremGenerator = new THREE.PMREMGenerator( renderer );
+    const sceneEnv = new THREE.Scene();
+
+    let renderTarget;
+    function updateSun() {
+
+        const phi = THREE.MathUtils.degToRad( 90 - parameters.elevation );
+        const theta = THREE.MathUtils.degToRad( parameters.azimuth );
+
+        sun.setFromSphericalCoords( 1, phi, theta );
+
+        sky.material.uniforms[ 'sunPosition' ].value.copy( sun );
+        water.material.uniforms[ 'sunDirection' ].value.copy( sun ).normalize();
+
+        if ( renderTarget !== undefined ) renderTarget.dispose();
+
+        sceneEnv.add( sky );
+        renderTarget = pmremGenerator.fromScene( sceneEnv );
+        scene.add( sky );
+
+        scene.environment = renderTarget.texture;
+
+    }
+
+    updateSun();
 }
 
 let step = [];
@@ -480,7 +539,7 @@ function getIntersects( point, objects ) {
 }
 
 function compute(){
-    for(let i=0; i<10; ++i){
+    for(let i=0; i<1; ++i){
         let nextRenderIndex = currentRenderIndex == 0 ? 1 : 0;
 
         let rt1 = renderTargets[currentRenderIndex];
@@ -507,15 +566,24 @@ function render() {
     
     compute();
 
-    terrainMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
-    waterMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
+    terrainMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture; 
     water.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
     
+    controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+
+    water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
+
+
     controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
 
     // Render
     //renderer.setRenderTarget( null );
     renderer.render( scene, camera );
+
+
+
+ 
+
 
     // if ( mouseMoved ) {
 
@@ -537,33 +605,25 @@ function render() {
     // }
 
 
-    let nextRenderIndex = currentRenderIndex == 0 ? 1 : 0;
+    // let nextRenderIndex = currentRenderIndex == 0 ? 1 : 0;
 
-    let rt1 = renderTargets[currentRenderIndex];
-    let rt2 = renderTargets[nextRenderIndex];
+    // let rt1 = renderTargets[currentRenderIndex];
+    // let rt2 = renderTargets[nextRenderIndex];
 
-    myFilter1.uniforms.heightmap.value = rt2.texture;
-    getReadPixcel('init', rt2, true);
-    gpuCompute.doRenderTarget( myFilter1, rt1 );
+    // myFilter1.uniforms.heightmap.value = rt2.texture;
+    // getReadPixcel('init', rt2, true);
+    // gpuCompute.doRenderTarget( myFilter1, rt1 );
 
-    myFilter2.uniforms.heightmap.value = rt1.texture;
-    //getReadPixcel('advect', rt1, false);
-    gpuCompute.doRenderTarget( myFilter2, rt2 );
+    // myFilter2.uniforms.heightmap.value = rt1.texture;
+    // //getReadPixcel('advect', rt1, false);
+    // gpuCompute.doRenderTarget( myFilter2, rt2 );
 
-    myFilter3.uniforms.heightmap.value = rt2.texture;
-    //getReadPixcel('height', rt2, false);
-    gpuCompute.doRenderTarget( myFilter3, rt1 );
-    //getReadPixcel('velocity', rt1, false);
+    // myFilter3.uniforms.heightmap.value = rt2.texture;
+    // //getReadPixcel('height', rt2, false);
+    // gpuCompute.doRenderTarget( myFilter3, rt1 );
+    // //getReadPixcel('velocity', rt1, false);
 
-    terrainMaterial.uniforms[ 'heightmap' ].value = rt2.texture
-    waterMaterial.uniforms[ 'heightmap' ].value = rt2.texture
 
-    controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
-
-    // Render
-    //renderer.setRenderTarget( null );
-    renderer.render( scene, camera );
-
-    currentRenderIndex = currentRenderIndex == 0 ? 1 : 0;
+    // currentRenderIndex = currentRenderIndex == 0 ? 1 : 0;
     
 }

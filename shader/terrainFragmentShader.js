@@ -40,7 +40,7 @@ varying vec2 vUv;
 
 void main() {
 
-	#include <clipping_planes_fragment>
+	//#include <clipping_planes_fragment>
 
 	vec4 diffuseColor = vec4( diffuse, opacity );
 	ReflectedLight reflectedLight = ReflectedLight( vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ) );

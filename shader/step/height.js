@@ -82,6 +82,7 @@ vec4 simulationStep() {
         //newHeight -= drainageAmount;
         newHeight = 0.5;
         newHeight = max(-0.00001, newHeight);
+        newHeight = min(newHeight, 6.);
         newHeight = min(H(here) * 2.0, newHeight);
     }
 

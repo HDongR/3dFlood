@@ -255,39 +255,75 @@ Water.WaterShader = {
 	vertexShader: /* glsl */`
 		uniform sampler2D heightmap;
 		#include <common>
-		#include <fog_pars_vertex>
+ 
+		#include <uv_pars_vertex>
+		#include <displacementmap_pars_vertex>
+		#include <envmap_pars_vertex>
+		#include <color_pars_vertex>
+		#include <morphtarget_pars_vertex>
+		#include <skinning_pars_vertex>
+		#include <shadowmap_pars_vertex>
 		#include <logdepthbuf_pars_vertex>
+		#include <clipping_planes_pars_vertex>
 
 		uniform mat4 textureMatrix;
 
 		varying vec4 vCoord;
 		varying vec2 vUv;
 		varying vec3 vToEye;
-
+		varying vec3 vViewPosition;
 		void main() {
 
 			vUv = uv;
 			vCoord = textureMatrix * vec4( position, 1.0 );
 
-			vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
-			vToEye = cameraPosition - worldPosition.xyz;
+			#include <uv_vertex>
+			#include <color_vertex>
 
-			vec4 mvPosition =  viewMatrix * worldPosition; // used in fog_vertex
+			// # include <beginnormal_vertex>
+			// Compute normal from heightmap
+			vec3 objectNormal = vec3(1.0, 1.0, 1.0 );
+			//<beginnormal_vertex>
+
+			#include <morphnormal_vertex>
+			#include <skinbase_vertex>
+			#include <skinnormal_vertex>
+			#include <defaultnormal_vertex>
+
+			//vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+			//vToEye = cameraPosition - worldPosition.xyz;
+
+			//vec4 mvPosition =  viewMatrix * worldPosition; // used in fog_vertex
 
 			vec4 data = texture2D( heightmap, uv );
 			float height = data.z > 0.0 ? data.z + data.w : 0.0; 
 			vec3 transformed = vec3( position.x, position.y, height);
 
+			//mvPosition.z = height;
 
-			gl_Position = projectionMatrix * mvPosition;
+			//gl_Position = projectionMatrix * mvPosition;
 
+			//#include <logdepthbuf_vertex>
+			//#include <fog_vertex>
+
+			#include <morphtarget_vertex>
+			#include <skinning_vertex>
+			#include <displacementmap_vertex>
+			#include <project_vertex>
 			#include <logdepthbuf_vertex>
-			#include <fog_vertex>
+			#include <clipping_planes_vertex>
+
+			vViewPosition = - mvPosition.xyz;
+
+			#include <worldpos_vertex>
+			#include <envmap_vertex>
+			#include <shadowmap_vertex>
+
 
 		}`,
 
 	fragmentShader: /* glsl */`
-
+		uniform sampler2D heightmap;
 		#include <common>
 		#include <fog_pars_fragment>
 		#include <logdepthbuf_pars_fragment>
@@ -325,7 +361,7 @@ Water.WaterShader = {
 			// determine flow direction
 			vec2 flow;
 			#ifdef USE_FLOWMAP
-				flow = texture2D( tFlowMap, vUv ).rg * 2.0 - 1.0;
+				flow = texture2D( heightmap, vUv ).xy * 2.0 - 1.0;
 			#else
 				flow = flowDirection;
 			#endif
@@ -351,14 +387,15 @@ Water.WaterShader = {
 			vec2 uv = coord.xy + coord.z * normal.xz * 0.05;
 
 			vec4 reflectColor = texture2D( tReflectionMap, vec2( 1.0 - uv.x, uv.y ) );
-			vec4 refractColor = texture2D( tRefractionMap, uv );
+			//vec4 refractColor = texture2D( tRefractionMap, uv );
 
 			// multiply water color with the mix of both textures
-			gl_FragColor = vec4( color, 1.0 ) * mix( refractColor, reflectColor, reflectance );
-
+			//gl_FragColor = vec4( color, 1.0 ) * mix( refractColor, reflectColor, reflectance );
+			gl_FragColor = vec4( color, 1.0 ) *  reflectColor;
 			#include <tonemapping_fragment>
 			#include <colorspace_fragment>
 			#include <fog_fragment>
+			//gl_FragColor = vec4( 1.0,1.0,1.0, 1.0 );// * mix( refractColor, reflectColor, reflectance );
 
 		}`
 
