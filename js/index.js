@@ -30,18 +30,20 @@ let container, stats;
 let camera, scene, renderer, controls;
 let terrainMaterial;
 let waterMaterial;
+let sky;
 const mouseCoords = new THREE.Vector2();
 const raycaster = new THREE.Raycaster();
 
 let waterMesh;
 let water;
-let sun;
 let terrainMesh;
 let meshRay;
 let gpuCompute;
 
-let setilView = false;
-let buildingView = false;
+let setilView = true;
+let buildingView = true;
+let waterView = true;
+let weatherView = true;
 let mouseMoved = false;
 
 async function parseTif(src){
@@ -74,8 +76,10 @@ async function parseGeoTiff(){
 
 parseGeoTiff();
 
-var cloudParticles, flash, rain, rainGeo, rainCount = 1000, cloudCount = 20;
+var cloudParticles, flash, rain, rainGeo, rainCount = 3000, cloudCount = 20;
 const dummy = new THREE.Object3D();
+let thunder = 500000;
+let gravity = 9.81;
 
 async function makeRain(){
     flash = new THREE.PointLight(0x062d89, 30, 100 ,1.7);
@@ -147,7 +151,7 @@ function rainRender(){
     const positionAttribute = rain.geometry.getAttribute( 'position' );
     for ( let i = 0; i < positionAttribute.count; i ++ ) {
         let y = positionAttribute.getY(i);
-        y -= 3 + Math.random() * 10;
+        y -= 1 + Math.random() * 5;
         if (y < 0) {
             y = 200;
         }
@@ -155,17 +159,16 @@ function rainRender(){
     }
     positionAttribute.needsUpdate = true;
     
-    rain.rotation.y +=0.002;
-    let v = 500000;
-    if(Math.random() > 0.93 || flash.power > v/10) {
-        if(flash.power < v/20){
+    rain.rotation.y +=0.0002;
+    if(Math.random() > 0.93 || flash.power > thunder/10) {
+        if(flash.power < thunder/20){
             flash.position.set(
                 Math.random()*BOUNDS_HALF/2, 
                200 + Math.random(30),
                Math.random()*BOUNDS_HALF/2
             );
         }
-        flash.power = 50 + Math.random() * v;
+        flash.power = 50 + Math.random() * thunder;
         //console.log('thunder');
     }
  
@@ -183,9 +186,9 @@ async function init(data, buildingData, streamData) {
     scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2( 0xcccccc, 0.0025 );
 
-    const sun = new THREE.DirectionalLight( 0xFFFFFF, 3.0 );
-    sun.position.set( 300, 400, 175 );
-    scene.add( sun );
+    const dirSun = new THREE.DirectionalLight( 0xFFFFFF, 3.0 );
+    dirSun.position.set( 300, 400, 175 );
+    scene.add( dirSun );
 
     const sun2 = new THREE.DirectionalLight( 0x40A040, 2.0 );
     sun2.position.set( - 100, 350, - 200 );
@@ -253,10 +256,14 @@ async function init(data, buildingData, streamData) {
         'buildingView': buildingView
     };
 
-    let waterView = true;
     const waterController = {
         'waterView' : waterView
     }
+
+    const weatherController = {
+        'weatherView' : weatherView
+    }
+
     gui.add(setilController, 'setilView' ).name('위성지도').onChange( (check)=>{
         console.log(check)
 
@@ -271,6 +278,16 @@ async function init(data, buildingData, streamData) {
         console.log(check)
 
         water.visible = check;
+    } );
+    gui.add(weatherController, 'weatherView' ).name('날씨효과').onChange( (check)=>{
+        console.log(check)
+
+        sky.visible = check;
+        cloudParticles.visible = check;
+        flash.visible = check;
+        rain.visible = check;
+        
+        water.material.uniforms.waterColor.value = check ? new THREE.Color(0x001e0f) : new THREE.Color(0xaff);
     } );
 
     await initWater();
@@ -297,8 +314,8 @@ async function initWater() {
             {
                 'heightmap': { value: null },
                 'setilmap' : {value: setilmapTexture},
-                'setilView' :  {value: false },
-                'buildingView' :  {value: false },
+                'setilView' :  {value: setilView },
+                'buildingView' :  {value: buildingView },
                 'originmap' :  {value: null },
             }
         ] ),
@@ -311,7 +328,7 @@ async function initWater() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.5;
 
-    sun = new THREE.Vector3();
+    const sun = new THREE.Vector3();
 
     let waterNormals = await loadTexture( '/js/water/waternormals.jpg' );
     waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
@@ -394,7 +411,7 @@ async function initWater() {
     // meshRay.updateMatrix();
     // scene.add( meshRay );
 
-    const sky = new Sky();
+    sky = new Sky();
     sky.scale.setScalar( 10000 );
     scene.add( sky );
 
