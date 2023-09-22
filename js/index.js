@@ -220,7 +220,7 @@ async function init(data, buildingData, streamData) {
     controls.screenSpacePanning = false;
 
     controls.minDistance = 1;
-    controls.maxDistance = 500;
+    controls.maxDistance = 1000;
 
     controls.maxPolarAngle = Math.PI;
 
@@ -323,7 +323,6 @@ async function initWater() {
         fragmentShader: terrainFragmentShader,
         transparent: true
     } );
-
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.5;
@@ -689,14 +688,10 @@ function render() {
 
     terrainMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture; 
     water.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
+    water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
     
     controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
-
-    water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
-
-
-    controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
-
+    
     rainRender();
     // Render
     //renderer.setRenderTarget( null );
