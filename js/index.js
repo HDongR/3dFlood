@@ -74,7 +74,102 @@ async function parseGeoTiff(){
 
 parseGeoTiff();
 
+var cloudParticles, flash, rain, rainGeo, rainCount = 1000, cloudCount = 20;
+const dummy = new THREE.Object3D();
 
+async function makeRain(){
+    flash = new THREE.PointLight(0x062d89, 30, 100 ,1.7);
+    flash.position.set(0, 200, 0);
+    scene.add(flash);
+
+    let rainTexture = await loadTexture('/asset/rain.png'); 
+    let smokeTexture = await loadTexture('/asset/smoke.png'); 
+
+    rainGeo = new THREE.BufferGeometry();
+    let rains = [];
+    for(let i=0;i<rainCount;i++) {
+        rains.push(
+            Math.random()*BOUNDS - BOUNDS_HALF,
+            Math.random()*200,
+            Math.random()*BOUNDS - BOUNDS_HALF);
+    }
+    const vertices = new Float32Array(rains);
+    rainGeo.setAttribute( 'position', new THREE.BufferAttribute( vertices, 3 ) );
+ 
+    var rainMaterial = new THREE.PointsMaterial({
+        color: 0xaaaaaa,
+        size: 1.0,
+        transparent: true,
+        depthTest: false,
+        blending: THREE.AdditiveBlending,
+        opacity:1,
+        map: rainTexture
+    });
+    rain = new THREE.Points(rainGeo,rainMaterial);
+    scene.add(rain);
+
+    var cloudGeo = new THREE.PlaneGeometry(BOUNDS, BOUNDS);
+    var cloudMaterial = new THREE.MeshLambertMaterial({
+        map: smokeTexture,
+        transparent:true,
+        depthTest:false,
+        side:THREE.DoubleSide,
+        opacity: 0.6,
+    });
+
+    cloudParticles = new THREE.InstancedMesh( cloudGeo, cloudMaterial, cloudCount );
+    cloudParticles.instanceMatrix.setUsage( THREE.DynamicDrawUsage ); // will be updated every frame
+    scene.add( cloudParticles );
+
+    for(let i=0; i<cloudCount; ++i){
+        dummy.position.set( Math.random()*BOUNDS - BOUNDS_HALF, 200, Math.random()*BOUNDS - BOUNDS_HALF );
+        dummy.rotation.x = - Math.PI / 2 ;
+        dummy.rotation.y = -0.12;
+        dummy.rotation.z = Math.random()*360;
+        dummy.updateMatrix();
+        cloudParticles.setMatrixAt( i, dummy.matrix );
+    }
+    cloudParticles.instanceMatrix.needsUpdate = true;
+}
+
+function rainRender(){
+    for(let i=0; i<cloudCount; ++i){
+        cloudParticles.getMatrixAt( i, dummy.matrix);
+        dummy.position.set(dummy.matrix.elements[12], 200, dummy.matrix.elements[14] );
+        //dummy.rotation.x = - Math.PI / 2 ;
+        //dummy.rotation.y = -0.12;
+        dummy.rotation.z -= 0.0002;
+        dummy.updateMatrix();
+        cloudParticles.setMatrixAt( i, dummy.matrix );
+    }
+    cloudParticles.instanceMatrix.needsUpdate = true;
+
+    const positionAttribute = rain.geometry.getAttribute( 'position' );
+    for ( let i = 0; i < positionAttribute.count; i ++ ) {
+        let y = positionAttribute.getY(i);
+        y -= 3 + Math.random() * 10;
+        if (y < 0) {
+            y = 200;
+        }
+        positionAttribute.setY(i, y);
+    }
+    positionAttribute.needsUpdate = true;
+    
+    rain.rotation.y +=0.002;
+    let v = 500000;
+    if(Math.random() > 0.93 || flash.power > v/10) {
+        if(flash.power < v/20){
+            flash.position.set(
+                Math.random()*BOUNDS_HALF/2, 
+               200 + Math.random(30),
+               Math.random()*BOUNDS_HALF/2
+            );
+        }
+        flash.power = 50 + Math.random() * v;
+        //console.log('thunder');
+    }
+ 
+}
 
 async function init(data, buildingData, streamData) {
     
@@ -86,7 +181,7 @@ async function init(data, buildingData, streamData) {
     camera.lookAt( 0, 0, 0 );
 
     scene = new THREE.Scene();
-    //scene.fog = new THREE.Fog( 0xcccccc, 10, 300 );
+    scene.fog = new THREE.FogExp2( 0xcccccc, 0.0025 );
 
     const sun = new THREE.DirectionalLight( 0xFFFFFF, 3.0 );
     sun.position.set( 300, 400, 175 );
@@ -96,13 +191,23 @@ async function init(data, buildingData, streamData) {
     sun2.position.set( - 100, 350, - 200 );
     scene.add( sun2 );
 
-    const geometry = new THREE.BoxGeometry( 512, 512, 512 ); 
-     
+    const geometry = new THREE.BoxGeometry( 128, 128, 128 ); 
+    const material = new THREE.MeshBasicMaterial( {color: 0x00ff00} ); 
+    const cube = new THREE.Mesh( geometry, material ); 
+
+    //0,0, 300
+    cube.position.x = 0;
+    cube.position.y = 300;
+    cube.position.z = 0;
+    //scene.add( cube );
 
     renderer = new THREE.WebGLRenderer();
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
     container.appendChild( renderer.domElement );
+    renderer.setClearColor(0xffffff); 
+
+    await makeRain();
 
     controls = new OrbitControls( camera, renderer.domElement );
     controls.listenToKeyEvents( window ); // optional
@@ -182,9 +287,7 @@ function loadTexture(src){
 
 async function initWater() {
     
-    let setilmapTexture = await loadTexture('/asset/output_daejeon_proc2.png');
- 
-
+    let setilmapTexture = await loadTexture('/asset/output_daejeon_proc2.png'); 
     const geometry = new THREE.PlaneGeometry( BOUNDS, BOUNDS, BOUNDS-1, BOUNDS-1);
     
     // material: make a THREE.ShaderMaterial clone of THREE.MeshPhongMaterial, with customized vertex shader
@@ -222,6 +325,7 @@ async function initWater() {
             sunDirection: new THREE.Vector3(),
             sunColor: 0xffffff,
             waterColor: 0x001e0f,
+            //waterColor: 0x643200,
             distortionScale: 3.7,
             fog: scene.fog !== undefined
         }
@@ -302,7 +406,7 @@ async function initWater() {
     skyUniforms[ 'mieDirectionalG' ].value = 0.8;
 
     const parameters = {
-        elevation: 2,
+        elevation: 0,
         azimuth: 180
     };
 
@@ -576,6 +680,7 @@ function render() {
 
     controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
 
+    rainRender();
     // Render
     //renderer.setRenderTarget( null );
     renderer.render( scene, camera );
