@@ -19,12 +19,19 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Water } from './water/water.js';
 import { Sky } from './water/Sky.js';
 
+import { parseInp } from './utils/inp.js';
+
 // Texture width for simulation
 const WIDTH = 128;
 
 // Water size in system units
 const BOUNDS = 512;
 const BOUNDS_HALF = BOUNDS * 0.5;
+
+const FOOT = 0.3048;
+const FOOT2 = FOOT ** 2;
+const FOOT3 = FOOT ** 3;
+const MinSurfArea = 12.566;
 
 let container, stats;
 let camera, scene, renderer, controls;
@@ -75,6 +82,95 @@ async function parseGeoTiff(){
 }
 
 parseGeoTiff();
+
+function intArrayToString(array) {
+    var ret = [];
+    for (var i = 0; i < array.length; i++) {
+      var chr = array[i];
+      if (chr > 0xFF) {
+        if (ASSERTIONS) {
+          assert(false, 'Character code ' + chr + ' (' + String.fromCharCode(chr) + ')  at offset ' + i + ' not in 0x00-0xFF.');
+        }
+        chr &= 0xFF;
+      }
+      ret.push(String.fromCharCode(chr));
+    }
+    return ret.join('');
+}
+
+let swmm = {junctions:[]};
+async function testSwmm(){
+    //FS.createPath('/', '/', true, true);
+    //FS.ignorePermissions = true;
+    //var f = FS.findObject('input.inp');
+    //if (f) {
+    //    FS.unlink('input.inp');
+    //}
+
+    let inpRes = await fetch('/asset/swmm/tmp_970.inp');
+    let inpText = await inpRes.text();
+    FS.createDataFile('/tmp/', 'input.inp', inpText, true, true);
+
+    await processModel();
+
+    async function processModel(){
+        swmm_open("/tmp/input.inp", "/tmp/Example1x.rpt", "/tmp/out.out");
+        swmm_start(1);
+        swmm_setAllowPonding(1);
+
+        let inp = parseInp(inpText);
+        let keys = Object.keys(inp.JUNCTIONS);
+        for(let i=0; i<keys.length; ++i){
+            let key = keys[i];
+            let junction = inp.JUNCTIONS[key];
+            junction['Name'] = key;
+            swmm.junctions.push(junction);
+        }
+        let startTime = performance.now(); // 측정 시작
+        console.log('측정 시작.');
+
+        for(let i=0; i<keys.length; ++i){
+            let Name = keys[i];
+    
+            const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
+
+            let inflow = Module.getValue(node, 'double');
+            let outflow = Module.getValue(node + 8, 'double');
+            let head = Module.getValue(node + 16, 'double');
+            let crestElev = Module.getValue(node + 24, 'double');
+            let type = Module.getValue(node + 32, 'i32');
+            let subIndex = Module.getValue(node + 36, 'i32');
+            let InverElev = Module.getValue(node + 40, 'double');
+            let InitDepth = Module.getValue(node + 48, 'double');
+            let fullDepth = Module.getValue(node + 56, 'double');
+            let surDepth = Module.getValue(node + 64, 'double');
+            let pondedArea = Module.getValue(node + 72, 'double');
+            let degree = Module.getValue(node + 80, 'i32');
+            let updated = String.fromCharCode(Module.getValue(node + 84, 'i8'));
+            let crownElev = Module.getValue(node + 88, 'double');
+            let losses = Module.getValue(node + 96, 'double');
+            let newVolume = Module.getValue(node + 104, 'double');
+            let fullVolume = Module.getValue(node + 112, 'double');
+            let overflow = Module.getValue(node + 120, 'double');
+            let newDepth = Module.getValue(node + 128, 'double');
+            let newLatFlow = Module.getValue(node + 136, 'double');
+            _free(node);
+
+            console.log('Name:'+Name+" invEl:"+InverElev + " fullDepth:"+fullDepth);
+        }
+        
+        let endTime = performance.now(); // 측정 종료
+        console.log('측정 종료.');
+        
+        console.log(`걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
+
+        //let rpt = intArrayToString(FS.findObject('/tmp/Example1x.rpt').contents);
+        //console.log(rpt);
+    }
+ 
+ 
+}
+testSwmm();
 
 var cloudParticles, flash, rain, rainGeo, rainCount = 3000, cloudCount = 20;
 const dummy = new THREE.Object3D();
@@ -599,12 +695,14 @@ function onWindowResize() {
 }
 
 
-function animate() {
+async function animate() {
+
+    await render();
+    stats.update();
 
     requestAnimationFrame( animate );
 
-    render();
-    stats.update();
+    
 
 }
 
@@ -658,7 +756,88 @@ function getIntersects( point, objects ) {
 
 }
 
-function compute(){
+let elapsed_time = 0.0;
+let input_ptr = _malloc(8);
+Module.setValue(input_ptr, elapsed_time, "double");
+
+function drainageStep(){
+    let solve_dt = ()=>{
+
+    }
+    
+    let step = ()=>{
+        let d = 0;
+        let startTime = performance.now(); // 측정 시작
+        let out = swmm_step(input_ptr);
+        let v = Module.getValue(input_ptr, 'double');
+        //console.log(elapsed_time);
+        elapsed_time = v;
+        //_free(input_ptr);
+
+        let endTime = performance.now(); // 측정 종료 
+        
+        //console.log(`step: ${v} 걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
+    }
+
+    let apply_linkage = ()=>{
+        let startTime = performance.now(); // 측정 시작
+        
+        for(let i=0; i<swmm.junctions.length; ++i){
+            let junction = swmm.junctions[i];
+
+            //swmm_setNodeFullDepth(i, 2.0/FOOT);
+            //let head = swmm_getNodeHead(i);
+            //let crestElev = swmm_getNodeCrestElev(i);
+            //let depth = swmm_getNodeDepth(i);
+
+            //int index, double h, double z, double cell_surf
+            let flow = apply_linkage_flow(i, 0.1, junction.Invert + 2, 10);
+            let Name = junction.Name;
+            //const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
+    
+            //let inflow = Module.getValue(node, 'double');
+            // let outflow = Module.getValue(node + 8, 'double');
+            //let head1 = Module.getValue(node + 16, 'double');
+            //let crestElev2 = Module.getValue(node + 24, 'double');
+            // let type = Module.getValue(node + 32, 'i32');
+            // let subIndex = Module.getValue(node + 36, 'i32');
+            //let InverElev = Module.getValue(node + 40, 'double');
+            // let InitDepth = Module.getValue(node + 48, 'double');
+            // let fullDepth = Module.getValue(node + 56, 'double');
+            // let surDepth = Module.getValue(node + 64, 'double');
+            // let pondedArea = Module.getValue(node + 72, 'double');
+            // let degree = Module.getValue(node + 80, 'i32');
+            // let updated = String.fromCharCode(Module.getValue(node + 84, 'i8'));
+            // let crownElev = Module.getValue(node + 88, 'double');
+            // let losses = Module.getValue(node + 96, 'double');
+            // let newVolume = Module.getValue(node + 104, 'double');
+            // let fullVolume = Module.getValue(node + 112, 'double');
+            // let overflow = Module.getValue(node + 120, 'double');
+            // let newDepth = Module.getValue(node + 128, 'double');
+            // let newLatFlow = Module.getValue(node + 136, 'double');
+            //_free(node);
+
+            //let rst1 = await swmm_open("/tmp/input.inp", "/tmp/Example1x.rpt", "/tmp/out.out");
+            
+            //console.log(res);
+            //console.log('Name:'+Name+" invEl:"+InverElev);
+        }
+
+        
+        let endTime = performance.now(); // 측정 종료 
+        
+        //console.log(`apply_linkage 걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
+        
+    }
+
+    solve_dt();
+    step();
+    apply_linkage();
+
+
+}
+
+async function compute(){
     for(let i=0; i<1; ++i){
         let nextRenderIndex = currentRenderIndex == 0 ? 1 : 0;
 
@@ -672,19 +851,23 @@ function compute(){
         myFilter2.uniforms.heightmap.value = rt1.texture;
         //getReadPixcel('advect', rt1, false);
         gpuCompute.doRenderTarget( myFilter2, rt2 );
-
+ 
         myFilter3.uniforms.heightmap.value = rt2.texture;
         //getReadPixcel('height', rt2, false);
         gpuCompute.doRenderTarget( myFilter3, rt1 );
         //getReadPixcel('velocity', rt1, false);
+
+        if(true){
+            drainageStep();
+        }
         
         currentRenderIndex = currentRenderIndex == 0 ? 1 : 0;
     }
 }
 
-function render() {
+async function render() {
     
-    compute();
+    await compute();
 
     terrainMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture; 
     water.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
