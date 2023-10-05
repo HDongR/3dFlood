@@ -90,6 +90,7 @@ function get_overflow_area(node_idx, node_depth){
     //"""return overflow area defauting to MinSurfArea
     //"""
     //cdef float overflow_area, surf_area
+    let overflow_area = 0;
     let surf_area = node_getSurfArea(node_idx, node_depth);
     if(surf_area <= 0.){
         overflow_area = MinSurfArea;
@@ -97,8 +98,8 @@ function get_overflow_area(node_idx, node_depth){
     return overflow_area * FOOT2;
 }
 
-function apply_linkage_flow(index, h, z, node_invert_elev, node_crest_elev, cell_surf){
-    let dt1d = 2;
+export function apply_linkage_flow(index, h, z, node_invert_elev, cell_surf, dt1d){
+    let node_crest_elev = swmm_getNodeCrestElev(index);
     let wse = z + h;
     let crest_elev = 0; 
     if(node_crest_elev != z){
@@ -112,11 +113,12 @@ function apply_linkage_flow(index, h, z, node_invert_elev, node_crest_elev, cell
     }
 
     //## linkage type ##
-    let overflow_area = get_overflow_area(index, Node[index].newDepth);
+    let nodeDepth = swmm_getNodeDepth(index);
+    let overflow_area = get_overflow_area(index, nodeDepth);
     //# weir width is the circumference (node considered circular)
-    let weir_width = PI * 2.0 * sqrt(overflow_area / PI);
+    let weir_width = Math.PI * 2.0 * Math.sqrt(overflow_area / Math.PI);
     //# determine linkage type
-    let head = (Node[index].invertElev + Node[index].newDepth);
+    let head = (node_invert_elev + nodeDepth);
     let linkage_type = get_linkage_type(wse, crest_elev, head, weir_width, overflow_area);
 
     //## linkage flow ##
@@ -130,7 +132,7 @@ function apply_linkage_flow(index, h, z, node_invert_elev, node_crest_elev, cell
     let maxflow = 0;
     if(new_linkage_flow < 0.0){
         maxflow = (h * cell_surf) / dt1d;
-        new_linkage_flow = MAX(new_linkage_flow, -maxflow);
+        new_linkage_flow = Math.max(new_linkage_flow, -maxflow);
     }
 
  /**
@@ -144,8 +146,9 @@ function apply_linkage_flow(index, h, z, node_invert_elev, node_crest_elev, cell
     */
 
     //## force flow to zero in case of flow inversion ##
-    let overflow_to_drainage = Node[index].linkage_flow > 0 && new_linkage_flow < 0;
-    let drainage_to_overflow = Node[index].linkage_flow < 0 && new_linkage_flow > 0;
+    let current_linkage_flow = swmm_getNodeLinkageFlow(index);
+    let overflow_to_drainage = current_linkage_flow > 0 && new_linkage_flow < 0;
+    let drainage_to_overflow = current_linkage_flow < 0 && new_linkage_flow > 0;
     if(overflow_to_drainage || drainage_to_overflow){
         linkage_type = 1;//linkage_types.NO_LINKAGE
         new_linkage_flow = 0.0;
@@ -155,10 +158,10 @@ function apply_linkage_flow(index, h, z, node_invert_elev, node_crest_elev, cell
 
     //# apply flow to 2D model (m/s) and drainage model (cfs)
     //arr_qdrain[row, col] = new_linkage_flow / cell_surf
-    swmm_addNodeInflow(index, - new_linkage_flow);
+    let inflowRst = swmm_addNodeInflow(index, - new_linkage_flow);
     //# update node array
-    Node[index].linkage_type = linkage_type;
-    Node[index].linkage_flow = new_linkage_flow;
+    swmm_setNodeLinkageFlow(index, new_linkage_flow);
+    swmm_setNodeLinkageType(index, linkage_type);
     //arr_node[i] = node
     return new_linkage_flow / FOOT3;
 }

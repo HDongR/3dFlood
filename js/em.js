@@ -476,7 +476,7 @@ function isFileURI(filename) {
 // include: runtime_exceptions.js
 // end include: runtime_exceptions.js
 var wasmBinaryFile;
-  wasmBinaryFile = 'js.wasm';
+  wasmBinaryFile = 'em.wasm';
   if (!isDataURI(wasmBinaryFile)) {
     wasmBinaryFile = locateFile(wasmBinaryFile);
   }
@@ -3893,6 +3893,14 @@ var _swmm_getNodeHeads = Module['_swmm_getNodeHeads'] = (a0) => (_swmm_getNodeHe
 var _swmm_getNodeHead = Module['_swmm_getNodeHead'] = (a0) => (_swmm_getNodeHead = Module['_swmm_getNodeHead'] = wasmExports['swmm_getNodeHead'])(a0);
 var _swmm_getNodeCrestElev = Module['_swmm_getNodeCrestElev'] = (a0) => (_swmm_getNodeCrestElev = Module['_swmm_getNodeCrestElev'] = wasmExports['swmm_getNodeCrestElev'])(a0);
 var _swmm_getNodeDepth = Module['_swmm_getNodeDepth'] = (a0) => (_swmm_getNodeDepth = Module['_swmm_getNodeDepth'] = wasmExports['swmm_getNodeDepth'])(a0);
+var _swmm_getNodeLinkageFlow = Module['_swmm_getNodeLinkageFlow'] = (a0) => (_swmm_getNodeLinkageFlow = Module['_swmm_getNodeLinkageFlow'] = wasmExports['swmm_getNodeLinkageFlow'])(a0);
+var _swmm_getNodeLinkageType = Module['_swmm_getNodeLinkageType'] = (a0) => (_swmm_getNodeLinkageType = Module['_swmm_getNodeLinkageType'] = wasmExports['swmm_getNodeLinkageType'])(a0);
+var _swmm_setNodeLinkageFlow = Module['_swmm_setNodeLinkageFlow'] = (a0, a1) => (_swmm_setNodeLinkageFlow = Module['_swmm_setNodeLinkageFlow'] = wasmExports['swmm_setNodeLinkageFlow'])(a0, a1);
+var _swmm_setNodeLinkageType = Module['_swmm_setNodeLinkageType'] = (a0, a1) => (_swmm_setNodeLinkageType = Module['_swmm_setNodeLinkageType'] = wasmExports['swmm_setNodeLinkageType'])(a0, a1);
+var _swmm_getNewRoutingTime = Module['_swmm_getNewRoutingTime'] = () => (_swmm_getNewRoutingTime = Module['_swmm_getNewRoutingTime'] = wasmExports['swmm_getNewRoutingTime'])();
+var _swmm_getOldRoutingTime = Module['_swmm_getOldRoutingTime'] = () => (_swmm_getOldRoutingTime = Module['_swmm_getOldRoutingTime'] = wasmExports['swmm_getOldRoutingTime'])();
+var _swmm_getRoutingModel = Module['_swmm_getRoutingModel'] = () => (_swmm_getRoutingModel = Module['_swmm_getRoutingModel'] = wasmExports['swmm_getRoutingModel'])();
+var _swmm_getRoutingStep = Module['_swmm_getRoutingStep'] = () => (_swmm_getRoutingStep = Module['_swmm_getRoutingStep'] = wasmExports['swmm_getRoutingStep'])();
 var _swmm_getNodeData = Module['_swmm_getNodeData'] = (a0) => (_swmm_getNodeData = Module['_swmm_getNodeData'] = wasmExports['swmm_getNodeData'])(a0);
 var _malloc = (a0) => (_malloc = wasmExports['malloc'])(a0);
 var _swmm_addNodeInflow = Module['_swmm_addNodeInflow'] = (a0, a1) => (_swmm_addNodeInflow = Module['_swmm_addNodeInflow'] = wasmExports['swmm_addNodeInflow'])(a0, a1);

@@ -16,10 +16,14 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { GPUComputationRenderer } from '../js/jsm/misc/GPUComputationRenderer.js';
 
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
 import { Water } from './water/water.js';
 import { Sky } from './water/Sky.js';
 
 import { parseInp } from './utils/inp.js';
+import { apply_linkage_flow } from './swmm.js';
+import { WGS84ToMercator, MercatorToWGS84 } from './utils/utils.js';
 
 // Texture width for simulation
 const WIDTH = 128;
@@ -31,10 +35,9 @@ const BOUNDS_HALF = BOUNDS * 0.5;
 const FOOT = 0.3048;
 const FOOT2 = FOOT ** 2;
 const FOOT3 = FOOT ** 3;
-const MinSurfArea = 12.566;
 
 let container, stats;
-let camera, scene, renderer, controls;
+let camera, scene, renderer, controls, transformControl;
 let terrainMaterial;
 let waterMaterial;
 let sky;
@@ -50,8 +53,10 @@ let gpuCompute;
 let setilView = true;
 let buildingView = true;
 let waterView = true;
-let weatherView = true;
+let weatherView = false;
 let mouseMoved = false;
+
+let centerXY = new THREE.Vector2();
 
 async function parseTif(src){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -61,7 +66,7 @@ async function parseTif(src){
     const tileWidth = image.getTileWidth();
     const tileHeight = image.getTileHeight();
     const samplesPerPixel = image.getSamplesPerPixel();
-
+    let out = MercatorToWGS84([14000000,4000000]);
     // when we are actually dealing with geo-data the following methods return
     // meaningful results:
     const origin = image.getOrigin();
@@ -97,6 +102,9 @@ function intArrayToString(array) {
     }
     return ret.join('');
 }
+
+
+
 
 let swmm = {junctions:[]};
 async function testSwmm(){
@@ -156,12 +164,10 @@ async function testSwmm(){
             let newLatFlow = Module.getValue(node + 136, 'double');
             _free(node);
 
-            console.log('Name:'+Name+" invEl:"+InverElev + " fullDepth:"+fullDepth);
+            //console.log('Name:'+Name+" invEl:"+InverElev + " fullDepth:"+fullDepth);
         }
         
         let endTime = performance.now(); // 측정 종료
-        console.log('측정 종료.');
-        
         console.log(`걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
 
         //let rpt = intArrayToString(FS.findObject('/tmp/Example1x.rpt').contents);
@@ -270,8 +276,12 @@ function rainRender(){
  
 }
 
+let cube;
+let pxv, pyv, pzv;
 async function init(data, buildingData, streamData) {
-    
+    pxv = document.getElementById('px');
+    pyv = document.getElementById('py');
+    pzv = document.getElementById('pz');
     container = document.createElement( 'div' );
     document.body.appendChild( container );
 
@@ -290,15 +300,18 @@ async function init(data, buildingData, streamData) {
     sun2.position.set( - 100, 350, - 200 );
     scene.add( sun2 );
 
-    const geometry = new THREE.BoxGeometry( 128, 128, 128 ); 
-    const material = new THREE.MeshBasicMaterial( {color: 0x00ff00} ); 
-    const cube = new THREE.Mesh( geometry, material ); 
-
+    const geometry = new THREE.BoxGeometry(4,4,4);
+    cube = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( 0xff0000 ) );
+ 
+    
     //0,0, 300
     cube.position.x = 0;
-    cube.position.y = 300;
+    cube.position.y = 0;
     cube.position.z = 0;
-    //scene.add( cube );
+    scene.add( cube );
+
+    const axesHelper = new THREE.AxesHelper( 5 );
+    scene.add( axesHelper );
 
     renderer = new THREE.WebGLRenderer();
     renderer.setPixelRatio( window.devicePixelRatio );
@@ -312,14 +325,24 @@ async function init(data, buildingData, streamData) {
     controls.listenToKeyEvents( window ); // optional
     //controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
     //controls.dampingFactor = 0.05;
-
     controls.screenSpacePanning = false;
-
     controls.minDistance = 1;
     controls.maxDistance = 1000;
-
     controls.maxPolarAngle = Math.PI;
+    controls.update();
+    //controls.addEventListener( 'change', render );
 
+    transformControl = new TransformControls( camera, renderer.domElement );
+    //transformControl.addEventListener( 'change', render );
+    transformControl.addEventListener( 'dragging-changed', function ( event ) {
+
+        controls.enabled = ! event.value;
+
+    } );
+    
+
+    
+    scene.add(transformControl);
 
     stats = new Stats();
     container.appendChild( stats.dom );
@@ -378,16 +401,20 @@ async function init(data, buildingData, streamData) {
     gui.add(weatherController, 'weatherView' ).name('날씨효과').onChange( (check)=>{
         console.log(check)
 
-        sky.visible = check;
-        cloudParticles.visible = check;
-        flash.visible = check;
-        rain.visible = check;
-        
-        water.material.uniforms.waterColor.value = check ? new THREE.Color(0x001e0f) : new THREE.Color(0xaff);
+        weatherOn(check);
     } );
 
     await initWater();
     await setCompute(data, buildingData, streamData);
+}
+
+function weatherOn(check){
+    sky.visible = check;
+    cloudParticles.visible = check;
+    flash.visible = check;
+    rain.visible = check;
+    
+    water.material.uniforms.waterColor.value = check ? new THREE.Color(0x001e0f) : new THREE.Color(0xaff);
 }
 
 function loadTexture(src){
@@ -494,9 +521,11 @@ async function initWater() {
     terrainMesh.matrixAutoUpdate = false;
     terrainMesh.updateMatrix();
 
+    transformControl.attach(cube);
+
     //scene.add( waterMesh );
     scene.add(water);
-    scene.add( terrainMesh );
+    scene.add(terrainMesh);
 
     // THREE.Mesh just for mouse raycasting
     // const geometryRay = new THREE.PlaneGeometry( BOUNDS, BOUNDS, 1, 1 );
@@ -547,6 +576,8 @@ async function initWater() {
     }
 
     updateSun();
+
+    weatherOn(weatherView);
 }
 
 let step = [];
@@ -575,8 +606,8 @@ async function setCompute(data, buildingData, streamData){
 
     fillTexture( heightmap, originmap, data, buildingData, streamData); 
     
-    heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
-    originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
+    //heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
+    //originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
 
     terrainMaterial.uniforms[ 'originmap' ].value = originmap;
 
@@ -608,10 +639,9 @@ async function setCompute(data, buildingData, streamData){
     
     myFilter1.uniforms.heightmap.value = null;
     myFilter2.uniforms.heightmap.value = null;
-    myFilter3.uniforms.heightmap.value = null;
     
-    myRenderTarget1 = gpuCompute.createRenderTarget();
-    myRenderTarget2 = gpuCompute.createRenderTarget();
+    myRenderTarget1 = gpuCompute.createRenderTarget(BOUNDS, BOUNDS, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, THREE.LinearFilter, THREE.NearestFilter);
+    myRenderTarget2 = gpuCompute.createRenderTarget(BOUNDS, BOUNDS, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, THREE.LinearFilter, THREE.NearestFilter);
 
     renderTargets = [myRenderTarget1, myRenderTarget2];
     
@@ -628,9 +658,9 @@ async function setCompute(data, buildingData, streamData){
     }
 
 
-    readWaterLevelImage = new Float32Array( 4 * 1 * 4 );
+    readWaterLevelImage = new Float32Array( BOUNDS * BOUNDS * 4 );
 
-    readWaterLevelRenderTarget = new THREE.WebGLRenderTarget( 4, 1, {
+    readWaterLevelRenderTarget = new THREE.WebGLRenderTarget(BOUNDS, BOUNDS, {
         wrapS: THREE.ClampToEdgeWrapping,
         wrapT: THREE.ClampToEdgeWrapping,
         minFilter: THREE.NearestFilter,
@@ -663,11 +693,25 @@ function fillTexture( texture, originmap, data, buildingData, streamData) {
             }else{
                 streamHeight = -0.0001;
             }
-
+            
+            let pos = xyPos(j, i);
+            let dbg = false;
+            if(
+                (i==255 && j == 255)
+                // ||
+                //(i==256 && j == 256)
+                ){
+                dbg = true;
+                console.log(pos);
+                debugger
+            }
+            // if(i >= 0 && i < BOUNDS/2){
+            //     dbg = true;
+            // }
             pixels[ p + 0 ] = 100000;//noise(x, y);
             pixels[ p + 1 ] = 100000;//pixels[ p + 0 ];
             pixels[ p + 2 ] = streamHeight;
-            pixels[ p + 3 ] = data[cnt] + buildingHeight;
+            pixels[ p + 3 ] = dbg? 10000:data[cnt] + buildingHeight;
             //pixels[ p + 2 ] = 1;
             //pixels[ p + 3 ] = 1;
 
@@ -756,31 +800,60 @@ function getIntersects( point, objects ) {
 
 }
 
+function xyPos(x, y){
+    let r = (4*x) + (4*y*BOUNDS);
+    return r;
+}
+
 let elapsed_time = 0.0;
 let input_ptr = _malloc(8);
 Module.setValue(input_ptr, elapsed_time, "double");
-
+let dt1d = 0;
 function drainageStep(){
     let solve_dt = ()=>{
-
+        let olds = swmm_getNewRoutingTime() / 1000.;
+        let news = swmm_getOldRoutingTime() / 1000.;
+        dt1d = news - olds;
+        if(dt1d <= 0){
+            let route_code = swmm_getRoutingModel();
+            let route_step = swmm_getRoutingStep();
+            dt1d = routing_getRoutingStep(route_code, route_step);
+        }
+        //console.log('dt1d:'+dt1d);
     }
     
     let step = ()=>{
-        let d = 0;
-        let startTime = performance.now(); // 측정 시작
-        let out = swmm_step(input_ptr);
-        let v = Module.getValue(input_ptr, 'double');
-        //console.log(elapsed_time);
-        elapsed_time = v;
+        //let startTime = performance.now(); // 측정 시작
+        let stepRst = swmm_step(input_ptr);
+        elapsed_time = Module.getValue(input_ptr, 'double');;
         //_free(input_ptr);
 
-        let endTime = performance.now(); // 측정 종료 
-        
-        //console.log(`step: ${v} 걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
+        //let endTime = performance.now(); // 측정 종료
+        //console.log(`step:${elapsed_time} 걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
     }
 
     let apply_linkage = ()=>{
-        let startTime = performance.now(); // 측정 시작
+
+ 
+        renderer.readRenderTargetPixels( renderTargets[currentRenderIndex] , 0, 0, BOUNDS, BOUNDS, readWaterLevelImage );
+        const pixels = new Float32Array( readWaterLevelImage.buffer );
+
+        for(let i=0; i<pixels.length; ++i){
+            if(pixels[i] >= 9999.){
+                //debugger;
+            }
+        }
+
+        let x = BOUNDS/2;
+        let y = BOUNDS/2;
+        let r = xyPos(x, y);
+        console.log(pixels[r], pixels[r+1], pixels[r+2], pixels[r+3]); 
+        if(pixels[r+2] == 0.5){
+            //debugger
+        }
+
+
+        //let startTime = performance.now(); // 측정 시작
         
         for(let i=0; i<swmm.junctions.length; ++i){
             let junction = swmm.junctions[i];
@@ -791,7 +864,7 @@ function drainageStep(){
             //let depth = swmm_getNodeDepth(i);
 
             //int index, double h, double z, double cell_surf
-            let flow = apply_linkage_flow(i, 0.1, junction.Invert + 2, 10);
+            let flow = apply_linkage_flow(i, 0.1, junction.Invert + 2, junction.Invert, 5, dt1d);
             let Name = junction.Name;
             //const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
     
@@ -824,8 +897,7 @@ function drainageStep(){
         }
 
         
-        let endTime = performance.now(); // 측정 종료 
-        
+        //let endTime = performance.now(); // 측정 종료
         //console.log(`apply_linkage 걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
         
     }
@@ -865,6 +937,7 @@ async function compute(){
     }
 }
 
+
 async function render() {
     
     await compute();
@@ -872,58 +945,13 @@ async function render() {
     terrainMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture; 
     water.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
     water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
-    
-    controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
-    
+
     rainRender();
     // Render
     //renderer.setRenderTarget( null );
     renderer.render( scene, camera );
-
-
-
- 
-
-
-    // if ( mouseMoved ) {
-
-    //     raycaster.setFromCamera( mouseCoords, camera );
-    //     const intersects = raycaster.intersectObject( terrainMesh );
-    //     if ( intersects.length > 0 ) {
-    //         let pixelX = Math.round(intersects[0].uv.x * 512);
-    //         let pixelY = Math.round(intersects[0].uv.y * 512);
-
-    //         //const point = intersects[ 0 ].point;
-    //         console.log(pixelX, pixelY);
-    //         rx = pixelX;
-    //         ry = pixelY;
-    //         //getReadPixcel()
-    //         //uniforms[ 'mousePos' ].value.set( point.x, point.z );
-    //     } else {
-    //         //uniforms[ 'mousePos' ].value.set( 10000, 10000 );
-    //     } 
-    // }
-
-
-    // let nextRenderIndex = currentRenderIndex == 0 ? 1 : 0;
-
-    // let rt1 = renderTargets[currentRenderIndex];
-    // let rt2 = renderTargets[nextRenderIndex];
-
-    // myFilter1.uniforms.heightmap.value = rt2.texture;
-    // getReadPixcel('init', rt2, true);
-    // gpuCompute.doRenderTarget( myFilter1, rt1 );
-
-    // myFilter2.uniforms.heightmap.value = rt1.texture;
-    // //getReadPixcel('advect', rt1, false);
-    // gpuCompute.doRenderTarget( myFilter2, rt2 );
-
-    // myFilter3.uniforms.heightmap.value = rt2.texture;
-    // //getReadPixcel('height', rt2, false);
-    // gpuCompute.doRenderTarget( myFilter3, rt1 );
-    // //getReadPixcel('velocity', rt1, false);
-
-
-    // currentRenderIndex = currentRenderIndex == 0 ? 1 : 0;
     
+    pxv.innerText = cube.position.x;
+    pyv.innerText = cube.position.y;
+    pzv.innerText = cube.position.z;
 }

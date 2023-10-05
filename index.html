@@ -21,6 +21,7 @@
     <script type="text/javascript" src="/js/utils/shp.js"></script>
 	<script type="text/javascript" src="/js/utils/jszip.min.js"></script>
 	<script type="text/javascript" src="/js/utils/jszip-utils.min.js"></script>
+	<script type="text/javascript" src="/js/utils/proj4.js"></script>
 
     <script type="importmap">
         {
@@ -31,11 +32,15 @@
         }
     </script>
 
-    <script src='/js/js.js'></script>
+    <script src="/js/em.js"></script>
     <script src="/js/script.js"></script>
     <script type="module" src="/js/index.js"></script>
 
-
+    <div id="xyCon" style="position: absolute;top: 12px;left: 86px;width: 120px;height: 30px;background: aqua;z-index: 10000;">
+        x:<span id="px">1</span>
+        y:<span id="py">2</span>
+        z:<span id="pz">3</span>
+    </div>
 
 </body>
 </html>
