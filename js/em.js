@@ -3885,7 +3885,7 @@ var _swmm_step = Module['_swmm_step'] = (a0) => (_swmm_step = Module['_swmm_step
 var _swmm_end = Module['_swmm_end'] = () => (_swmm_end = Module['_swmm_end'] = wasmExports['swmm_end'])();
 var _swmm_close = Module['_swmm_close'] = () => (_swmm_close = Module['_swmm_close'] = wasmExports['swmm_close'])();
 var _routing_getRoutingStep = Module['_routing_getRoutingStep'] = (a0, a1) => (_routing_getRoutingStep = Module['_routing_getRoutingStep'] = wasmExports['routing_getRoutingStep'])(a0, a1);
-var _swmm_getNodeID = Module['_swmm_getNodeID'] = (a0, a1) => (_swmm_getNodeID = Module['_swmm_getNodeID'] = wasmExports['swmm_getNodeID'])(a0, a1);
+var _swmm_getNodeID = Module['_swmm_getNodeID'] = (a0) => (_swmm_getNodeID = Module['_swmm_getNodeID'] = wasmExports['swmm_getNodeID'])(a0);
 var _swmm_getLinkID = Module['_swmm_getLinkID'] = (a0, a1) => (_swmm_getLinkID = Module['_swmm_getLinkID'] = wasmExports['swmm_getLinkID'])(a0, a1);
 var _swmm_getNodeInflows = Module['_swmm_getNodeInflows'] = (a0) => (_swmm_getNodeInflows = Module['_swmm_getNodeInflows'] = wasmExports['swmm_getNodeInflows'])(a0);
 var _swmm_getNodeOutflows = Module['_swmm_getNodeOutflows'] = (a0) => (_swmm_getNodeOutflows = Module['_swmm_getNodeOutflows'] = wasmExports['swmm_getNodeOutflows'])(a0);

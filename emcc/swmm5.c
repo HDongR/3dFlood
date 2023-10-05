@@ -675,18 +675,19 @@ int  DLLEXPORT swmm_getVersion(void)
 //   Coupling functions (GESZ)
 //=============================================================================
 EMSCRIPTEN_KEEPALIVE
-int DLLEXPORT   swmm_getNodeID(int index, char* id)
+char* DLLEXPORT   swmm_getNodeID(int index)
 {
 	if ( IsOpenFlag )
 	{
 		if ( index >= Nobjects[NODE] )
         {
-			return ERR_NUMBER;
+			return NULL;
         }
-		sstrncpy(id,Node[index].ID,MAXLINE);
-		return ERR_NONE;
+		//sstrncpy(id,Node[index].ID,MAXLINE);
+         
+		return Node[index].ID;
 	}
-	return ERR_NOT_OPEN;
+	return NULL;
 }
 EMSCRIPTEN_KEEPALIVE
 int DLLEXPORT   swmm_getLinkID(int index, char* id)

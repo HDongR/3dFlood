@@ -72,6 +72,7 @@ class Water extends Mesh {
 				UniformsLib[ 'lights' ],
 				{   
                     'heightmap': {value: null},
+                    'originmap': {value: null},
 					'normalSampler': { value: null },
 					'mirrorSampler': { value: null },
 					'alpha': { value: 1.0 },
@@ -88,6 +89,7 @@ class Water extends Mesh {
 
 			vertexShader: /* glsl */`
 				uniform sampler2D heightmap;
+				uniform sampler2D originmap;
 				uniform mat4 textureMatrix;
 				uniform float time;
 
@@ -120,7 +122,8 @@ class Water extends Mesh {
                 
 
                     vec4 data = texture2D( heightmap, uv );
-                    float height = data.z > 0.0 ? data.z + data.w : 0.0;
+                    vec4 origin_data = texture2D( originmap, uv );
+                    float height = data.z > 0.0 ? data.z + data.w : origin_data.w-0.0001;
                     vec3 transformed = vec3( position.x, position.y, height);
                     
                     #include <morphtarget_vertex>
@@ -165,7 +168,8 @@ class Water extends Mesh {
 
 				varying vec4 mirrorCoord;
 				varying vec4 worldPosition;
-
+				varying vec2 vUv;
+				
 				vec4 getNoise( vec2 uv ) {
 					vec2 uv0 = ( uv / 103.0 ) + vec2(time / 17.0, time / 29.0);
 					vec2 uv1 = uv / 107.0-vec2( time / -19.0, time / 31.0 );
@@ -218,11 +222,20 @@ class Water extends Mesh {
 					vec3 scatter = max( 0.0, dot( surfaceNormal, eyeDirection ) ) * waterColor;
 					vec3 albedo = mix( ( sunColor * diffuseLight * 0.3 + scatter ) * getShadowMask(), ( vec3( 0.1 ) + reflectionSample * 0.9 + reflectionSample * specularLight ), reflectance);
 					vec3 outgoingLight = albedo;
+
+					
+					vec4 data = texture2D( heightmap, vUv );
+
+					
 					gl_FragColor = vec4( outgoingLight, alpha );
+
+					if(data.z <= 0.){
+						discard;
+					}
 
 					#include <tonemapping_fragment>
 					#include <colorspace_fragment>
-					#include <fog_fragment>	
+					#include <fog_fragment>
 				}`
 
 		};

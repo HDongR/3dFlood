@@ -1,7 +1,9 @@
 export default `
 uniform sampler2D heightmap;
 uniform sampler2D originmap;
+uniform sampler2D drainmap; 
 uniform bool buildingView;
+uniform bool drainView;
 
 #define PHONG
 
@@ -68,6 +70,10 @@ void main() {
         r_height = texture2D( heightmap, uv ).w;
     }else{
         r_height = texture2D( originmap, uv ).w;
+    }
+
+    if(drainView){
+        r_height += texture2D( drainmap, uv ).x;
     }
 
     vec3 transformed = vec3( position.x, position.y, r_height);

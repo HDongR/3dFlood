@@ -20,3 +20,4 @@ const swmm_getNewRoutingTime = Module.cwrap('swmm_getNewRoutingTime', 'number', 
 const swmm_getOldRoutingTime = Module.cwrap('swmm_getOldRoutingTime', 'number', []);
 const swmm_getRoutingModel = Module.cwrap('swmm_getRoutingModel', 'number', []);
 const swmm_getRoutingStep = Module.cwrap('swmm_getRoutingStep', 'number', []);
+const swmm_getNodeID = Module.cwrap('swmm_getNodeID', 'string', ['number']);

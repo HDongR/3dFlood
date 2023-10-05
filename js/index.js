@@ -23,7 +23,7 @@ import { Sky } from './water/Sky.js';
 
 import { parseInp } from './utils/inp.js';
 import { apply_linkage_flow } from './swmm.js';
-import { WGS84ToMercator, MercatorToWGS84 } from './utils/utils.js';
+import { WGS84ToMercator, MercatorToWGS84, intArrayToString } from './utils/utils.js';
 
 // Texture width for simulation
 const WIDTH = 128;
@@ -52,13 +52,19 @@ let gpuCompute;
 
 let setilView = true;
 let buildingView = true;
+let drainView = true;
 let waterView = true;
 let weatherView = false;
 let mouseMoved = false;
 
-let centerXY = new THREE.Vector2();
+let global_bbox = [];
+let centerXY = [0,0];
+let realWidth = 0;
+let realHeight = 0;
+let beX = 0;
+let beY = 0;
 
-async function parseTif(src){
+async function parseTif(src, callback){
     const rawTiff = await GeoTIFF.fromUrl(src);
     const image = await rawTiff.getImage();
     const width = image.getWidth();
@@ -66,48 +72,41 @@ async function parseTif(src){
     const tileWidth = image.getTileWidth();
     const tileHeight = image.getTileHeight();
     const samplesPerPixel = image.getSamplesPerPixel();
-    let out = MercatorToWGS84([14000000,4000000]);
+    //let out = MercatorToWGS84([14000000,4000000]);
     // when we are actually dealing with geo-data the following methods return
     // meaningful results:
     const origin = image.getOrigin();
     const resolution = image.getResolution();
     const bbox = image.getBoundingBox();
-    
+    if(callback){
+        callback(bbox);
+    }
     const data = await image.readRasters({ interleave: true });
     return data;
 }
 
 async function parseGeoTiff(){
-    const tifData = await parseTif('/asset/daejeon_1.tif');
+    const tifData = await parseTif('/asset/daejeon_1.tif', (bbox)=>{
+        global_bbox = bbox;
+        centerXY[0] = (bbox[0]+bbox[2])/2.0;
+        centerXY[1] = (bbox[1]+bbox[3])/2.0;
+        realWidth = bbox[2] - bbox[0];
+        realHeight = bbox[3] - bbox[1];
+        beX = realWidth / BOUNDS;
+        beY = realHeight / BOUNDS;
+    });
     const buildingData = await parseTif('/asset/building_1.tif');
     const streamData = await parseTif('/asset/stream_1.tif');
     
+    await loadSwmm('/asset/swmm/drain_00387.inp');
     await init(tifData, buildingData, streamData);
     animate();
 }
 
 parseGeoTiff();
 
-function intArrayToString(array) {
-    var ret = [];
-    for (var i = 0; i < array.length; i++) {
-      var chr = array[i];
-      if (chr > 0xFF) {
-        if (ASSERTIONS) {
-          assert(false, 'Character code ' + chr + ' (' + String.fromCharCode(chr) + ')  at offset ' + i + ' not in 0x00-0xFF.');
-        }
-        chr &= 0xFF;
-      }
-      ret.push(String.fromCharCode(chr));
-    }
-    return ret.join('');
-}
-
-
-
-
-let swmm = {junctions:[]};
-async function testSwmm(){
+let swmm = {nodes:[]};
+async function loadSwmm(inpFile){
     //FS.createPath('/', '/', true, true);
     //FS.ignorePermissions = true;
     //var f = FS.findObject('input.inp');
@@ -115,31 +114,141 @@ async function testSwmm(){
     //    FS.unlink('input.inp');
     //}
 
-    let inpRes = await fetch('/asset/swmm/tmp_970.inp');
+    let inpRes = await fetch(inpFile);
     let inpText = await inpRes.text();
     FS.createDataFile('/tmp/', 'input.inp', inpText, true, true);
 
     await processModel();
-
+    
     async function processModel(){
         swmm_open("/tmp/input.inp", "/tmp/Example1x.rpt", "/tmp/out.out");
         swmm_start(1);
         swmm_setAllowPonding(1);
 
         let inp = parseInp(inpText);
-        let keys = Object.keys(inp.JUNCTIONS);
-        for(let i=0; i<keys.length; ++i){
-            let key = keys[i];
-            let junction = inp.JUNCTIONS[key];
-            junction['Name'] = key;
-            swmm.junctions.push(junction);
-        }
-        let startTime = performance.now(); // 측정 시작
-        console.log('측정 시작.');
 
-        for(let i=0; i<keys.length; ++i){
-            let Name = keys[i];
-    
+        //junction 전처리
+        let junctionkeys = Object.keys(inp.JUNCTIONS);
+        for(let i=0; i<junctionkeys.length; ++i){
+            let jkey = junctionkeys[i];
+            let junction = inp.JUNCTIONS[jkey];
+            let coord = inp.COORDINATES[jkey];
+            junction['Name'] = jkey;
+            junction['Type'] = 'Junction';
+            junction['x'] = coord.x;
+            junction['y'] = coord.y;
+            if(global_bbox[0] < junction.x && global_bbox[1] < junction.y 
+                && global_bbox[2] > junction.x && global_bbox[3] > junction.y){
+                junction['containStudy'] = true;
+
+                let subX = centerXY[0] - junction.x;
+                let subY = centerXY[1] - junction.y;
+
+                let bX = Math.floor(subX / beX);
+                let bY = Math.floor(subY / beY);
+                
+                let index_x = bX > 0 ? bX - BOUNDS_HALF : BOUNDS_HALF - bX;
+                let index_y = bY > 0 ? bY - BOUNDS_HALF : BOUNDS_HALF - bY;
+                index_x = Math.abs(index_x);
+                index_y = Math.abs(index_y);
+                if(index_x >= BOUNDS || index_y >= BOUNDS){
+                    debugger
+                }
+                //console.log(jkey, index_x, index_y);
+
+                let world_x = index_x - BOUNDS_HALF;
+                let world_z = BOUNDS_HALF - index_y;
+
+                junction['index_x'] = index_x;
+                junction['index_y'] = index_y;
+                junction['world_x'] = world_x;
+                junction['world_z'] = world_z;
+
+
+            }else{
+                junction['containStudy'] = false;
+            }
+            swmm.nodes.push(junction);
+        }
+
+        //outfall 전처리
+        let outfallkeys = Object.keys(inp.OUTFALLS);
+        for(let i=0; i<outfallkeys.length; ++i){
+            let okey = outfallkeys[i];
+            let outfall = inp.OUTFALLS[okey];
+            let coord = inp.COORDINATES[okey];
+            outfall['Name'] = okey;
+            outfall['Type'] = 'Outfall';
+            outfall['x'] = coord.x;
+            outfall['y'] = coord.y;
+            if(global_bbox[0] < outfall.x && global_bbox[1] < outfall.y 
+                && global_bbox[2] > outfall.x && global_bbox[3] > outfall.y){
+                outfall['containStudy'] = true;
+                let subX = centerXY[0] - outfall.x;
+                let subY = centerXY[1] - outfall.y;
+
+                let bX = Math.floor(subX / beX);
+                let bY = Math.floor(subY / beY);
+                
+                let index_x = bX > 0 ? bX - BOUNDS_HALF : BOUNDS_HALF - bX;
+                let index_y = bY > 0 ? bY - BOUNDS_HALF : BOUNDS_HALF - bY;
+                index_x = Math.abs(index_x);
+                index_y = Math.abs(index_y);
+                if(index_x >= BOUNDS || index_y >= BOUNDS){
+                    debugger
+                }
+                //console.log(okey, index_x, index_y);
+
+                let world_x = index_x - BOUNDS_HALF;
+                let world_z = BOUNDS_HALF - index_y;
+
+                outfall['index_x'] = index_x;
+                outfall['index_y'] = index_y;
+                outfall['world_x'] = world_x;
+                outfall['world_z'] = world_z;
+
+            }else{
+                outfall['containStudy'] = false;
+            }
+            swmm.nodes.push(outfall);
+        }
+
+        //conduit 전처리
+        let conduitKeys = Object.keys(inp.CONDUITS);
+        for(let i=0; i<conduitKeys.length; ++i){
+            let ckey = conduitKeys[i];
+            let conduit = inp.CONDUITS[ckey];
+            let fromNode = conduit.FromNode;
+            let toNode = conduit.ToNode;
+            if(fromNode && fromNode.startsWith('J')){
+                fromNode = inp.JUNCTIONS[fromNode];
+            }else if(fromNode && fromNode.startsWith('O')){
+                fromNode = inp.OUTFALLS[fromNode];
+            }
+            if(toNode && toNode.startsWith('J')){
+                toNode = inp.JUNCTIONS[toNode];
+            }else if(toNode && toNode.startsWith('O')){
+                toNode = inp.OUTFALLS[toNode];
+            }
+            let length_x = fromNode.world_x - toNode.world_x;
+            let length_z = fromNode.world_z - toNode.world_z;
+            let length = Math.sqrt(length_x*length_x + length_z*length_z);
+            //console.log(length);
+            conduit['Length'] = length;
+            let xsection = inp.XSECTIONS[ckey];
+            conduit['Barrels'] = xsection['Barrels'];
+            conduit['Geom1'] = xsection['Geom1'];
+            conduit['Geom2'] = xsection['Geom2'];
+            conduit['Geom3'] = xsection['Geom3'];
+            conduit['Geom4'] = xsection['Geom4'];
+            conduit['Shape'] = xsection['Shape'];
+            debugger;
+        }
+
+
+        let startTime = performance.now(); // 측정 시작
+        for(let i=0; i<junctionkeys.length; ++i){
+            let Name = junctionkeys[i];
             const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
 
             let inflow = Module.getValue(node, 'double');
@@ -163,7 +272,6 @@ async function testSwmm(){
             let newDepth = Module.getValue(node + 128, 'double');
             let newLatFlow = Module.getValue(node + 136, 'double');
             _free(node);
-
             //console.log('Name:'+Name+" invEl:"+InverElev + " fullDepth:"+fullDepth);
         }
         
@@ -176,7 +284,6 @@ async function testSwmm(){
  
  
 }
-testSwmm();
 
 var cloudParticles, flash, rain, rainGeo, rainCount = 3000, cloudCount = 20;
 const dummy = new THREE.Object3D();
@@ -276,9 +383,30 @@ function rainRender(){
  
 }
 
+async function addDrainNetworkMesh(){
+    const originmap_pixcels = originmap.image.data;
+
+    for(let i=0; i<swmm.nodes.length; ++i){
+        let node = swmm.nodes[i];
+        let length = 40;
+        const geometry = new THREE.CylinderGeometry( 1, 1, length, 24, 1, true, 0 ); 
+        const material = new THREE.MeshPhongMaterial( {color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
+        const cylinder = new THREE.Mesh( geometry, material ); scene.add( cylinder );
+        cylinder.position.x = node.world_x;
+        cylinder.position.z = node.world_z;
+
+        let pos = xyPos(node.index_x, node.index_y);
+        let terrain = originmap_pixcels[pos+3];
+        cylinder.position.y = terrain - length/2 + 0.5;
+
+        scene.add(cylinder);
+    }
+    
+}
+
 let cube;
 let pxv, pyv, pzv;
-async function init(data, buildingData, streamData) {
+async function init(terrainData, buildingData, streamData) {
     pxv = document.getElementById('px');
     pyv = document.getElementById('py');
     pzv = document.getElementById('pz');
@@ -302,7 +430,7 @@ async function init(data, buildingData, streamData) {
 
     const geometry = new THREE.BoxGeometry(4,4,4);
     cube = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( 0xff0000 ) );
- 
+    
     
     //0,0, 300
     cube.position.x = 0;
@@ -375,6 +503,10 @@ async function init(data, buildingData, streamData) {
         'buildingView': buildingView
     };
 
+    const drainController = {
+        'drainView': drainView
+    };
+
     const waterController = {
         'waterView' : waterView
     }
@@ -393,6 +525,11 @@ async function init(data, buildingData, streamData) {
 
         terrainMaterial.uniforms[ 'buildingView' ].value = check;
     } );
+    gui.add(drainController, 'drainView' ).name('관망').onChange( (check)=>{
+        console.log(check)
+
+        terrainMaterial.uniforms[ 'drainView' ].value = check;
+    } );
     gui.add(waterController, 'waterView' ).name('물').onChange( (check)=>{
         console.log(check)
 
@@ -405,7 +542,8 @@ async function init(data, buildingData, streamData) {
     } );
 
     await initWater();
-    await setCompute(data, buildingData, streamData);
+    await setCompute(terrainData, buildingData, streamData);
+    await addDrainNetworkMesh();
 }
 
 function weatherOn(check){
@@ -436,9 +574,11 @@ async function initWater() {
             THREE.ShaderLib[ 'phong' ].uniforms,
             {
                 'heightmap': { value: null },
+                'drainmap': { value: null },
                 'setilmap' : {value: setilmapTexture},
                 'setilView' :  {value: setilView },
                 'buildingView' :  {value: buildingView },
+                'drainView' :  {value: drainView },
                 'originmap' :  {value: null },
             }
         ] ),
@@ -446,6 +586,7 @@ async function initWater() {
         fragmentShader: terrainFragmentShader,
         transparent: true
     } );
+    terrainMaterial.side = THREE.DoubleSide;
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.5;
@@ -588,8 +729,11 @@ let currentRenderIndex = 0;
 
 let readWaterLevelRenderTarget;
 let readWaterLevelImage;
+let heightmap;
+let originmap;
+let drainmap;
 
-async function setCompute(data, buildingData, streamData){
+async function setCompute(terrainData, buildingData, streamData){
     
     // Creates the gpu computation class and sets it up
 
@@ -601,10 +745,11 @@ async function setCompute(data, buildingData, streamData){
 
     }
 
-    const heightmap = gpuCompute.createTexture();
-    const originmap = gpuCompute.createTexture(); 
+    heightmap = gpuCompute.createTexture();
+    originmap = gpuCompute.createTexture();
+    drainmap = gpuCompute.createTexture();
 
-    fillTexture( heightmap, originmap, data, buildingData, streamData); 
+    fillTexture( heightmap, originmap, drainmap, terrainData, buildingData, streamData); 
     
     //heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
     //originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
@@ -650,7 +795,8 @@ async function setCompute(data, buildingData, streamData){
 
     
     terrainMaterial.uniforms[ 'originmap' ].value = originmap;
-
+    terrainMaterial.uniforms[ 'drainmap' ].value = drainmap;
+    water.material.uniforms[ 'originmap' ].value = originmap;
 
     const error = gpuCompute.init();
     if ( error !== null ) { 
@@ -671,16 +817,22 @@ async function setCompute(data, buildingData, streamData){
     } );
 }
 
-function fillTexture( texture, originmap, data, buildingData, streamData) {
+function fillTexture( heightmap, originmap, drainmap, data, buildingData, streamData) {
 
-    const pixels = texture.image.data;
-    const originpixcels = originmap.image.data;
+    const heightmap_pixels = heightmap.image.data;
+    const originmap_pixcels = originmap.image.data;
+    const drainmap_pixcels = drainmap.image.data;
 
-    let p = 0;
     let cnt = 0;
-    for ( let j = 0; j < BOUNDS; j ++ ) {
-
+    for ( let j = BOUNDS-1; j >= 0 ; j -- ) {
         for ( let i = 0; i < BOUNDS; i ++ ) {
+            let pos = xyPos(i,j);
+            //console.log('idx'+pos);
+            let xVelocity = pos;
+            let yVelocity = pos+1;
+            let zWater = pos+2;
+            let wTerrain = pos+3;
+
             let buildingHeight = buildingData[cnt];
             if(isNaN( buildingHeight )){
                 buildingHeight = 0;
@@ -694,37 +846,38 @@ function fillTexture( texture, originmap, data, buildingData, streamData) {
                 streamHeight = -0.0001;
             }
             
-            let pos = xyPos(j, i);
+            
             let dbg = false;
             if(
-                (i==255 && j == 255)
+                (i==BOUNDS_HALF && j == BOUNDS_HALF)
                 // ||
                 //(i==256 && j == 256)
                 ){
                 dbg = true;
                 console.log(pos);
-                debugger
+                //debugger
             }
-            // if(i >= 0 && i < BOUNDS/2){
-            //     dbg = true;
-            // }
-            pixels[ p + 0 ] = 100000;//noise(x, y);
-            pixels[ p + 1 ] = 100000;//pixels[ p + 0 ];
-            pixels[ p + 2 ] = streamHeight;
-            pixels[ p + 3 ] = dbg? 10000:data[cnt] + buildingHeight;
-            //pixels[ p + 2 ] = 1;
-            //pixels[ p + 3 ] = 1;
+            
+            heightmap_pixels[ xVelocity ] = 0;
+            heightmap_pixels[ yVelocity ] = 0;
+            heightmap_pixels[ zWater ] = streamHeight;
+            heightmap_pixels[ wTerrain ] = dbg? 10000:data[cnt] + buildingHeight;
 
-            originpixcels[ p + 0 ] = 0;//noise(x, y);
-            originpixcels[ p + 1 ] = 0;//pixels[ p + 0 ];
-            originpixcels[ p + 2 ] = 0;
-            originpixcels[ p + 3 ] = data[cnt];
+            originmap_pixcels[ xVelocity ] = 0;
+            originmap_pixcels[ yVelocity ] = 0;
+            originmap_pixcels[ zWater ] = 0;
+            originmap_pixcels[ wTerrain ] = data[cnt];
 
-            p+=4;
             cnt++;
 
         }
+    }
 
+    //drainmap 넣기
+    for(let i=0; i<swmm.nodes.length; ++i){
+        let node = swmm.nodes[i];
+        let pos = xyPos(node.index_x, node.index_y);
+        drainmap_pixcels[pos] = 100;
     }
 
 }
@@ -825,7 +978,7 @@ function drainageStep(){
     let step = ()=>{
         //let startTime = performance.now(); // 측정 시작
         let stepRst = swmm_step(input_ptr);
-        elapsed_time = Module.getValue(input_ptr, 'double');;
+        elapsed_time = Module.getValue(input_ptr, 'double');
         //_free(input_ptr);
 
         //let endTime = performance.now(); // 측정 종료
@@ -855,8 +1008,8 @@ function drainageStep(){
 
         //let startTime = performance.now(); // 측정 시작
         
-        for(let i=0; i<swmm.junctions.length; ++i){
-            let junction = swmm.junctions[i];
+        for(let i=0; i<swmm.nodes.length; ++i){
+            let node = swmm.nodes[i];
 
             //swmm_setNodeFullDepth(i, 2.0/FOOT);
             //let head = swmm_getNodeHead(i);
@@ -864,8 +1017,11 @@ function drainageStep(){
             //let depth = swmm_getNodeDepth(i);
 
             //int index, double h, double z, double cell_surf
-            let flow = apply_linkage_flow(i, 0.1, junction.Invert + 2, junction.Invert, 5, dt1d);
-            let Name = junction.Name;
+            let flow = apply_linkage_flow(i, 0.1, node.Invert + 2, node.Invert, 5, dt1d);
+            let Name = node.Name;
+            //if(Name == 'O_7'){
+            //    let rtnId = swmm_getNodeID(i);
+            //}
             //const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
     
             //let inflow = Module.getValue(node, 'double');

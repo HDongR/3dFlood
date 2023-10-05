@@ -9,7 +9,9 @@ uniform float opacity;
 
 uniform bool setilView;
 uniform sampler2D heightmap;
+uniform sampler2D drainmap; 
 uniform sampler2D setilmap; 
+uniform bool drainView;
 varying vec2 vUv;
 
 #include <common>
@@ -77,7 +79,14 @@ void main() {
 	#include <dithering_fragment>
 	
 	if(setilView){
-		gl_FragColor.xyz = vec3(texture2D( setilmap, vUv));
+		vec3 mx = vec3(texture2D( setilmap, vUv));
+		if(drainView){
+			vec3 dr = vec3(texture2D( drainmap, vUv));
+			mx = mix(mx, dr, 0.5);
+		}
+
+		gl_FragColor.xyz = mx;
+		
 	}else{
 		gl_FragColor.xyz = gl_FragColor.rgb;
 	}

@@ -106,7 +106,7 @@ double DLLEXPORT get_linkage_flow(double wse, double node_head, double weir_widt
                             double crest_elev, int linkage_type, double overflow_area);                      
 
 
-int DLLEXPORT   swmm_getNodeID(int index, char* id);
+char* DLLEXPORT   swmm_getNodeID(int index);
 nodeData* DLLEXPORT   swmm_getNodeData(int index);
 double DLLEXPORT   swmm_getNodeHead(int index);
 double DLLEXPORT   swmm_getNodeCrestElev(int index);
