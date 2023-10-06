@@ -50,6 +50,7 @@ let terrainMesh;
 let meshRay;
 let gpuCompute;
 
+let onlyDrainView = false;
 let setilView = true;
 let buildingView = true;
 let drainView = true;
@@ -105,7 +106,7 @@ async function parseGeoTiff(){
 
 parseGeoTiff();
 
-let swmm = {nodes:[]};
+let swmm = {nodes:[], links:[]};
 async function loadSwmm(inpFile){
     //FS.createPath('/', '/', true, true);
     //FS.ignorePermissions = true;
@@ -134,7 +135,7 @@ async function loadSwmm(inpFile){
             let junction = inp.JUNCTIONS[jkey];
             let coord = inp.COORDINATES[jkey];
             junction['Name'] = jkey;
-            junction['Type'] = 'Junction';
+            junction['junction_kind'] = 'junction';
             junction['x'] = coord.x;
             junction['y'] = coord.y;
             if(global_bbox[0] < junction.x && global_bbox[1] < junction.y 
@@ -178,7 +179,7 @@ async function loadSwmm(inpFile){
             let outfall = inp.OUTFALLS[okey];
             let coord = inp.COORDINATES[okey];
             outfall['Name'] = okey;
-            outfall['Type'] = 'Outfall';
+            outfall['junction_kind'] = 'spew';
             outfall['x'] = coord.x;
             outfall['y'] = coord.y;
             if(global_bbox[0] < outfall.x && global_bbox[1] < outfall.y 
@@ -232,9 +233,20 @@ async function loadSwmm(inpFile){
             }
             let length_x = fromNode.world_x - toNode.world_x;
             let length_z = fromNode.world_z - toNode.world_z;
-            let length = Math.sqrt(length_x*length_x + length_z*length_z);
+            let length_y = Math.abs(Number(fromNode.Invert) - Number(toNode.Invert));
+            let length = Math.sqrt(length_x*length_x + length_z*length_z); //2d
+
+            // if(ckey == 'C_16'){
+            //     debugger
+            // }
+            let _3dLen = 0;
+            if(length_y > 0){
+                _3dLen = Math.sqrt(length*length + length_y*length_y); //3d
+            }
             //console.log(length);
+            conduit['Name'] = ckey;
             conduit['Length'] = length;
+            conduit['_3dLen'] = _3dLen;
             let xsection = inp.XSECTIONS[ckey];
             conduit['Barrels'] = xsection['Barrels'];
             conduit['Geom1'] = xsection['Geom1'];
@@ -242,7 +254,11 @@ async function loadSwmm(inpFile){
             conduit['Geom3'] = xsection['Geom3'];
             conduit['Geom4'] = xsection['Geom4'];
             conduit['Shape'] = xsection['Shape'];
-            debugger;
+            conduit['fromNode'] = fromNode;
+            conduit['toNode'] = toNode;
+
+            swmm.links.push(conduit);
+            //debugger;
         }
 
 
@@ -384,24 +400,123 @@ function rainRender(){
 }
 
 async function addDrainNetworkMesh(){
-    const originmap_pixcels = originmap.image.data;
+    //const originmap_pixcels = originmap.image.data;
 
-    for(let i=0; i<swmm.nodes.length; ++i){
-        let node = swmm.nodes[i];
-        let length = 40;
-        const geometry = new THREE.CylinderGeometry( 1, 1, length, 24, 1, true, 0 ); 
-        const material = new THREE.MeshPhongMaterial( {color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
-        const cylinder = new THREE.Mesh( geometry, material ); scene.add( cylinder );
+    let drawJunction = (node, conduitGeom1, offset)=>{
+        let j_elevation = Number(node.Invert);
+        let j_maxDepth = node.junction_kind == 'spew' ? 0 : Number(node.Dmax);
+        /** junction의 depth와 conduit의 geom1을 비교해서 큰 값으로 depth를 정함. */
+        let sumJunctionDepth = j_elevation + j_maxDepth;
+        let sumDepth = j_elevation + conduitGeom1;
+        let resultDepth = sumDepth > sumJunctionDepth ? sumDepth : sumJunctionDepth;
+        resultDepth += offset;
+
+        let x = 0;
+        let y = resultDepth;
+        let width = 1.2192; //4ft를 m로 치환시 1.2192미터로 지름을 환산.
+        let height = resultDepth-j_elevation;
+
+        const geometry = new THREE.CylinderGeometry( width/beX, width/beY, height, 24, 1, true, 0 ); 
+        const material = new THREE.MeshPhongMaterial( {wireframe:true, depthTest:true, transparent:true, opacity:0.5, color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
+        const cylinder = new THREE.Mesh( geometry, material ); 
         cylinder.position.x = node.world_x;
         cylinder.position.z = node.world_z;
 
-        let pos = xyPos(node.index_x, node.index_y);
-        let terrain = originmap_pixcels[pos+3];
-        cylinder.position.y = terrain - length/2 + 0.5;
+        //let pos = xyPos(node.index_x, node.index_y);
+        //let terrain = originmap_pixcels[pos+3];
+        cylinder.position.y = j_elevation + height/2;// + 0.1; //0.1m 지표면으로 표출
 
         scene.add(cylinder);
+
+    };
+
+
+    for(let i=0; i<swmm.links.length; ++i){
+        let conduit = swmm.links[i];
+        let c_length = Number(conduit.Length);
+        let _3dLen = Number(conduit._3dLen);
+        if(_3dLen == 0){
+            _3dLen = c_length;
+        }
+
+        let prevJunction = conduit.fromNode;
+        let nextJunction = conduit.toNode;
+   
+        if(!prevJunction || !nextJunction){
+           continue; 
+        }
+        let c_geom1 = Number(conduit.Geom1);
+        let c_inOffset = Number(conduit.InOffset);
+        let c_outOffset = Number(conduit.OutOffset);
+
+        let prev_j_elevation = Number(prevJunction.Invert);
+        //let prev_j_maxDepth = prevJunction.junction_kind == 'spew' ? 0 : Number(prevJunction.Dmax);
+        let next_j_elevation = Number(nextJunction.Invert);
+        //let next_j_maxDepth = nextJunction.junction_kind == 'spew' ? 0 : Number(nextJunction.Dmax);
+
+        // let prev_sumJunctionDepth = prev_j_elevation + prev_j_maxDepth;
+        // let prev_sumDepth = prev_j_elevation + c_geom1;
+        // let next_sumJunctionDepth = next_j_elevation + next_j_maxDepth;
+        // let next_sumDepth = next_j_elevation + c_geom1;
+
+        //let top_startPos = prev_sumDepth > prev_sumJunctionDepth ? prev_sumDepth : prev_sumJunctionDepth;
+        //let top_endPos = next_sumDepth > next_sumJunctionDepth ? next_sumDepth : next_sumJunctionDepth;
+        let bottom_startPos = prev_j_elevation + c_inOffset;
+        let bottom_endPos = next_j_elevation + c_outOffset;
+
+        /** conduit 상단 바 */
+        let top_start_x =  0;
+        let top_next_x = c_length;
+        let top_start_y = c_geom1 + prev_j_elevation + c_inOffset;
+        let top_next_y = c_geom1 + next_j_elevation + c_outOffset;
+
+        /** conduit 하단 바 */
+        let bottom_start_x = top_start_x;
+        let bottom_next_x = top_next_x;
+        let bottom_start_y = bottom_startPos;
+        let bottom_next_y = bottom_endPos;
+
+        //상단바 기울기 각도 구하기
+        let t_difX = top_next_x - top_start_x;
+        let t_difY = top_next_y - top_start_y;
+        let t_radian = Math.atan2(t_difY, t_difX);
+        let t_degree = t_radian * 180 / Math.PI;
+
+        //하단바 기울기 각도 구하기
+        let b_difX = bottom_next_x - bottom_start_x;
+        let b_difY = bottom_next_y - bottom_start_y;
+        let b_radian = Math.atan2(b_difY, b_difX);
+        let b_degree = b_radian * 180 / Math.PI;
+
+        //xz 축 각도 구하기
+        let h_difX = nextJunction.world_x - prevJunction.world_x;
+        let h_difZ = prevJunction.world_z - nextJunction.world_z;
+        let h_radian = Math.atan2(h_difZ, h_difX);
+        let h_degree = h_radian * 180 / Math.PI;
+
+        //if(conduit.Name == 'C_16'){
+        //    debugger
+        //}
+        //console.log(t_degree, b_degree, h_degree);
+
+        const geometry = new THREE.CylinderGeometry( c_geom1/beX, c_geom1/beY, _3dLen, 24, 1, true, 0 ); 
+        const material = new THREE.MeshPhongMaterial( {wireframe:true,depthTest:true,transparent:true, opacity:0.5, color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
+        const cylinder = new THREE.Mesh( geometry, material ); 
+        cylinder.position.x = (prevJunction.world_x + nextJunction.world_x) / 2;
+        cylinder.position.z = (prevJunction.world_z + nextJunction.world_z) / 2;
+        cylinder.position.y = (prev_j_elevation+next_j_elevation)/2 + (c_geom1/beX+c_geom1/beY)/2;
+        
+        cylinder.rotation.z = Math.PI/2 + t_radian;
+        cylinder.rotation.y = h_radian;
+        scene.add(cylinder);
+
+        //prevJunction 그리기
+        drawJunction(prevJunction, c_geom1, c_inOffset);
+        //nextJunction 그리기
+        if(nextJunction.junction_kind == 'junction'){ //마지막 outfall은 그리지 않음.
+            drawJunction(nextJunction, c_geom1, c_outOffset);
+        }
     }
-    
 }
 
 let cube;
@@ -495,6 +610,10 @@ async function init(terrainData, buildingData, streamData) {
 
     const gui = new GUI();
 
+    const onlyDrainController = {
+        'onlyDrainView': onlyDrainView
+    };
+
     const setilController = {
         'setilView': setilView
     };
@@ -514,6 +633,16 @@ async function init(terrainData, buildingData, streamData) {
     const weatherController = {
         'weatherView' : weatherView
     }
+
+    gui.add(onlyDrainController, 'onlyDrainView' ).name('관망도만 보기').onChange( (check)=>{
+        console.log(check)
+        //weatherOn(!check);
+        terrainMaterial.uniforms[ 'setilView' ].value = !check;
+        terrainMaterial.uniforms[ 'buildingView' ].value = !check;
+        terrainMaterial.uniforms[ 'drainView' ].value = !check;
+        water.visible = !check;
+        terrainMesh.visible = !check;
+    } );
 
     gui.add(setilController, 'setilView' ).name('위성지도').onChange( (check)=>{
         console.log(check)
@@ -1000,7 +1129,7 @@ function drainageStep(){
         let x = BOUNDS/2;
         let y = BOUNDS/2;
         let r = xyPos(x, y);
-        console.log(pixels[r], pixels[r+1], pixels[r+2], pixels[r+3]); 
+        //console.log(pixels[r], pixels[r+1], pixels[r+2], pixels[r+3]); 
         if(pixels[r+2] == 0.5){
             //debugger
         }
