@@ -96,11 +96,14 @@ async function parseGeoTiff(){
         beX = realWidth / BOUNDS;
         beY = realHeight / BOUNDS;
     });
-    const buildingData = await parseTif('/asset/building_1.tif');
+    const buildingData = await parseTif('/asset/building_1_ex.tif');
     const streamData = await parseTif('/asset/stream_1.tif');
+    const surf_rough_Data = await parseTif('/asset/tmp_1_surface_roughness_result_1.tiff');
+    const surf_infilmax_Data = await parseTif('/asset/tmp_1_surface_infilmax_result_1.tiff');
+    const surf_infilmin_Data = await parseTif('/asset/tmp_1_surface_infilmin_result_1.tiff');
     
     await loadSwmm('/asset/swmm/drain_00387.inp');
-    await init(tifData, buildingData, streamData);
+    await init(tifData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data);
     animate();
 }
 
@@ -521,7 +524,7 @@ async function addDrainNetworkMesh(){
 
 let cube;
 let pxv, pyv, pzv;
-async function init(terrainData, buildingData, streamData) {
+async function init(terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data) {
     pxv = document.getElementById('px');
     pyv = document.getElementById('py');
     pzv = document.getElementById('pz');
@@ -671,7 +674,7 @@ async function init(terrainData, buildingData, streamData) {
     } );
 
     await initWater();
-    await setCompute(terrainData, buildingData, streamData);
+    await setCompute(terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data);
     await addDrainNetworkMesh();
 }
 
@@ -860,9 +863,9 @@ let readWaterLevelRenderTarget;
 let readWaterLevelImage;
 let heightmap;
 let originmap;
-let drainmap;
+let infilmap;
 
-async function setCompute(terrainData, buildingData, streamData){
+async function setCompute(terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data){
     
     // Creates the gpu computation class and sets it up
 
@@ -877,8 +880,9 @@ async function setCompute(terrainData, buildingData, streamData){
     heightmap = gpuCompute.createTexture();
     originmap = gpuCompute.createTexture();
     drainmap = gpuCompute.createTexture();
+    infilmap = gpuCompute.createTexture();
 
-    fillTexture( heightmap, originmap, drainmap, terrainData, buildingData, streamData); 
+    fillTexture( heightmap, originmap, drainmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data); 
     
     //heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
     //originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
@@ -946,21 +950,22 @@ async function setCompute(terrainData, buildingData, streamData){
     } );
 }
 
-function fillTexture( heightmap, originmap, drainmap, data, buildingData, streamData) {
+function fillTexture( heightmap, originmap, drainmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data) {
 
     const heightmap_pixels = heightmap.image.data;
     const originmap_pixcels = originmap.image.data;
     const drainmap_pixcels = drainmap.image.data;
+    const infilmap_pixcels = infilmap.image.data;
 
     let cnt = 0;
     for ( let j = BOUNDS-1; j >= 0 ; j -- ) {
         for ( let i = 0; i < BOUNDS; i ++ ) {
             let pos = xyPos(i,j);
             //console.log('idx'+pos);
-            let xVelocity = pos;
-            let yVelocity = pos+1;
-            let zWater = pos+2;
-            let wTerrain = pos+3;
+            let xPox = pos;
+            let yPos = pos+1;
+            let zPos = pos+2;
+            let wPos = pos+3;
 
             let buildingHeight = buildingData[cnt];
             if(isNaN( buildingHeight )){
@@ -987,15 +992,20 @@ function fillTexture( heightmap, originmap, drainmap, data, buildingData, stream
                 //debugger
             }
             
-            heightmap_pixels[ xVelocity ] = 0;
-            heightmap_pixels[ yVelocity ] = 0;
-            heightmap_pixels[ zWater ] = streamHeight;
-            heightmap_pixels[ wTerrain ] = dbg? 10000:data[cnt] + buildingHeight;
+            heightmap_pixels[ xPox ] = 0;
+            heightmap_pixels[ yPos ] = 0;
+            heightmap_pixels[ zPos ] = streamHeight;
+            heightmap_pixels[ wPos ] = dbg? 10000:terrainData[cnt] + buildingHeight;
 
-            originmap_pixcels[ xVelocity ] = 0;
-            originmap_pixcels[ yVelocity ] = 0;
-            originmap_pixcels[ zWater ] = 0;
-            originmap_pixcels[ wTerrain ] = data[cnt];
+            originmap_pixcels[ xPox ] = 0;
+            originmap_pixcels[ yPos ] = 0;
+            originmap_pixcels[ zPos ] = 0;
+            originmap_pixcels[ wPos ] = terrainData[cnt];
+
+            infilmap_pixcels[ xPox ] = surf_rough_Data[cnt];
+            infilmap_pixcels[ yPos ] = surf_infilmax_Data[cnt];
+            infilmap_pixcels[ zPos ] = surf_infilmin_Data[cnt];
+            infilmap_pixcels[ wPos ] = 0;
 
             cnt++;
 
