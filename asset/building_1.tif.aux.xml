@@ -1,0 +1,12 @@
+<PAMDataset>
+  <PAMRasterBand band="1">
+    <Description>building_r@PERMANENT</Description>
+    <Metadata>
+      <MDI key="STATISTICS_MAXIMUM">95</MDI>
+      <MDI key="STATISTICS_MEAN">11.266399621964</MDI>
+      <MDI key="STATISTICS_MINIMUM">2.4</MDI>
+      <MDI key="STATISTICS_STDDEV">11.475112821767</MDI>
+      <MDI key="STATISTICS_VALID_PERCENT">27.85</MDI>
+    </Metadata>
+  </PAMRasterBand>
+</PAMDataset>

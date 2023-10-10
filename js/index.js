@@ -417,7 +417,7 @@ async function addDrainNetworkMesh(){
         let height = resultDepth-j_elevation;
 
         const geometry = new THREE.CylinderGeometry( width/beX, width/beY, height, 24, 1, true, 0 ); 
-        const material = new THREE.MeshPhongMaterial( {wireframe:true, depthTest:true, transparent:true, opacity:0.5, color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
+        const material = new THREE.MeshPhongMaterial( {wireframe:false, depthTest:true, transparent:true, opacity:0.5, color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
         const cylinder = new THREE.Mesh( geometry, material ); 
         cylinder.position.x = node.world_x;
         cylinder.position.z = node.world_z;
@@ -500,7 +500,7 @@ async function addDrainNetworkMesh(){
         //console.log(t_degree, b_degree, h_degree);
 
         const geometry = new THREE.CylinderGeometry( c_geom1/beX, c_geom1/beY, _3dLen, 24, 1, true, 0 ); 
-        const material = new THREE.MeshPhongMaterial( {wireframe:true,depthTest:true,transparent:true, opacity:0.5, color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
+        const material = new THREE.MeshPhongMaterial( {wireframe:false,depthTest:true,transparent:true, opacity:0.5, color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
         const cylinder = new THREE.Mesh( geometry, material ); 
         cylinder.position.x = (prevJunction.world_x + nextJunction.world_x) / 2;
         cylinder.position.z = (prevJunction.world_z + nextJunction.world_z) / 2;
