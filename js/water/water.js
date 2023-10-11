@@ -10,7 +10,10 @@ import {
 	UniformsUtils,
 	Vector3,
 	Vector4,
-	WebGLRenderTarget
+	WebGLRenderTarget,
+	ClampToEdgeWrapping,
+	NearestFilter,
+	LinearFilter
 } from 'three';
 
 /**
@@ -63,7 +66,12 @@ class Water extends Mesh {
 
 		const mirrorCamera = new PerspectiveCamera();
 
-		const renderTarget = new WebGLRenderTarget( textureWidth, textureHeight );
+		const renderTarget = new WebGLRenderTarget( textureWidth, textureHeight, {
+			wrapS: ClampToEdgeWrapping,
+			wrapT: ClampToEdgeWrapping,
+			minFilter: LinearFilter,
+			magFilter: LinearFilter,
+		} );
 
 		const mirrorShader = {
 

@@ -106,5 +106,6 @@ void main(void) {
     posBottom = uv + vec2( 0.0, - unit );
 
     gl_FragColor = simulationStep();
+    //gl_FragColor = vec4(1.,1.,1.,1.);
 }
 `
