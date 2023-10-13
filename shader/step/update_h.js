@@ -4,13 +4,6 @@ uniform sampler2D heightmap;
 uniform sampler2D drainmap;
 uniform float dx, dy;
 
-#define V(D)  D.xy         // velocity
-#define Vx(D) D.x          // velocity (x-component)
-#define Vy(D) D.y          // velocity (y-component)
-#define H(D)  D.z          // water height
-#define T(D)  D.w          // terrain height
-#define L(D)  H(D) + T(D)  // water level
-
 //factor
 #define gravity 9.80665
 #define theta 0.9
@@ -25,10 +18,48 @@ float hflow(float z0, float z1, float wse0, float wse1){
 void main(void) {
     //float unit = 1./resolution.x;
     vec2 uv = gl_FragCoord.xy * unit;
-    vec4 pos = texture2D(heightmap, uv);
+    vec2 pos = uv;
+    vec2 posLeft = uv + vec2( - unit, 0.0 );
+    vec2 posRight = uv + vec2( unit, 0.0  );
+    vec2 posTop = uv + vec2( 0.0, unit );
+    vec2 posBottom = uv + vec2( 0.0, - unit );
+    vec2 posLeft2 = uv + vec2( - unit*2., 0.0 );
+    vec2 posRight2 = uv + vec2( unit*2., 0.0  );
+    vec2 posTop2 = uv + vec2( 0.0, unit*2. );
+    vec2 posBottom2 = uv + vec2( 0.0, - unit*2. );
+    vec2 posRightBottom = uv + vec2( unit, - unit );
+    vec2 posLeftTop = uv + vec2( - unit, unit );
+
+    vec4 _pos = texture2D(heightmap, pos);
+    vec4 _posLeft = texture2D(heightmap, posLeft);
+    vec4 _posRight = texture2D(heightmap, posRight);
+    vec4 _posTop = texture2D(heightmap, posTop);
+    vec4 _posBottom = texture2D(heightmap, posBottom);
+    vec4 _posLeft2 = texture2D(heightmap, posLeft2);
+    vec4 _posRight2 = texture2D(heightmap, posRight2);
+    vec4 _posTop2 = texture2D(heightmap, posTop2);
+    vec4 _posBottom2 = texture2D(heightmap, posBottom2);
+    vec4 _posRightBottom = texture2D(heightmap, posRightBottom);
+    vec4 _posLeftTop = texture2D(heightmap, posLeftTop);
+     
     vec4 drain = texture2D(drainmap, uv);
-    pos.z = pos.z + drain.x;
-    gl_FragColor = pos;
+    float qe = _pos.x;
+    float qw = _posLeft.x;
+    float qs = _pos.y;
+    float qn = _posTop.y;
+    float h = _pos.z;
+    
+    float q_sum = (qw - qe) / dx + (qn - qs) / dy;
+    float h_new = h + q_sum*dt;
+    //float h_new = h + (drain.x + q_sum) * dt;
+    if(h_new < 0.){
+        h_new = 0.;
+    }
+
+
+    
+    _pos.z = h_new;
+    gl_FragColor = _pos;
 }
 
 `

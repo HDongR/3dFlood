@@ -6,13 +6,6 @@ uniform float infiltrationRate;
 uniform float simTime;
 uniform float rain_per_sec;
 
-#define V(D)  D.xy         // velocity
-#define Vx(D) D.x          // velocity (x-component)
-#define Vy(D) D.y          // velocity (y-component)
-#define H(D)  D.z          // water height
-#define T(D)  D.w          // terrain height
-#define L(D)  H(D) + T(D)  // water level
-
 //honton
 #define logE 2.718281828459045
 #define MAX_K 9.0
@@ -35,14 +28,14 @@ void main(void) {
     float r_infrate = infrate.z+( (infrate.y-infrate.z)*pow(logE,-K*simTime/60.) );
     float dt_h = dt / 3600.;
     float rain = infrate.w;
-    float o_inf = cap_inf_rate(dt_h, H(here), r_infrate);
+    float o_inf = cap_inf_rate(dt_h, here.z, r_infrate);
 
     float dt_rain = dt / rain_per_sec;
-    float h_new = max( H(here) + ((rain*dt_rain - o_inf*dt_h) / 1000.), 0.);
+    float h_new = max( here.z + ((rain*dt_rain - o_inf*dt_h) / 1000.), 0.);
 
-    here.z = h_new;
+    //here.z = h_new;
     gl_FragColor = here;
-    //gl_FragColor = vec4(K,H(here),dt_h,r_infrate);
+    //gl_FragColor = vec4(K,here.z,dt_h,r_infrate);
 }
 
 `

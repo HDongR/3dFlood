@@ -237,7 +237,7 @@ class Water extends Mesh {
 					
 					gl_FragColor = vec4( outgoingLight, alpha );
 
-					if(data.z <= 0.){
+					if(data.z <= 0.1){
 						discard;
 					}
 

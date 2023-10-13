@@ -4,19 +4,12 @@ uniform sampler2D heightmap;
 uniform sampler2D infilmap;
 uniform float dx, dy;
 
-#define V(D)  D.xy         // velocity
-#define Vx(D) D.x          // velocity (x-component)
-#define Vy(D) D.y          // velocity (y-component)
-#define H(D)  D.z          // water height
-#define T(D)  D.w          // terrain height
-#define L(D)  H(D) + T(D)  // water level
-
 //factor
 #define gravity 9.80665
 #define theta 0.9
 #define hf_min 0.005
 #define v_route 0.1
-#define q_thres 150.0
+#define q_thres 1.0
 
 float hflow(float z0, float z1, float wse0, float wse1){
     return max(wse1, wse0) - max(z1, z0);
@@ -80,56 +73,56 @@ void main(void) {
     float qe = _pos.x;
     float qs = _pos.y;
 
-    float ze = _posRight.w;
-    float h_e = _posRight.z;
+    float ze = _posTop.w;
+    float h_e = _posTop.z;
     float wse_e = ze + h_e;
-    float ne = 0.5 * (n0 + texture2D(infilmap, posRight).x);
-    float qe_st = 0.25 * (qs + _posBottom.y + _posRightBottom.y + _posRight.y);
+    float ne = 0.5 * (n0 + texture2D(infilmap, posTop).x);
+    float qe_st = 0.25 * (qs + _posLeft.y + _posLeftTop.y + _posTop.y);
     float qe_vect = sqrt(qe*qe + qe_st*qe_st);
-    float hf_e = hflow(z0, ze, wse0, wse_e);
+    float hf_e = hflow(z0, ze, wse0, wse_e); 
     float qe_new = 0.;
     if(hf_e <= 0.){
         qe_new = 0.;
     }else if(hf_e > hf_min){
-        qe_new = almeida2013(hf_e, wse0, wse_e, ne, _posLeft.x, qe, _posRight.x, qe_vect, dx);
-    }else if(hf_e <= hf_min && z0 > ze && wse_e > wse0){
+        qe_new = almeida2013(hf_e, wse0, wse_e, ne, _posBottom.x, qe, _posTop.x, qe_vect, dx);
+    }else if(hf_e <= hf_min && z0 < ze && wse_e > wse0){
         qe_new = - rain_routing(h_e, wse_e, wse0, dx);
-    }else if(hf_e <= hf_min && z0 < ze && wse0 > wse_e){
+    }else if(hf_e <= hf_min && z0 > ze && wse0 > wse_e){
         qe_new = rain_routing(h0, wse0, wse_e, dx);
     }else{
         qe_new = 0.;
     }
 
     if( qe_new > q_thres){
-        qe_new = q_thres;
+       qe_new = q_thres;
     }else if(qe_new < -q_thres){
-        qe_new = -q_thres;
+       qe_new = -q_thres;
     }
 
-    float zs = _posTop.w;
-    float h_s = _posTop.z;
+    float zs = _posRight.w;
+    float h_s = _posRight.z;
     float wse_s = zs + h_s;
-    float ns = 0.5 * (n0 + texture2D(infilmap, posTop).x);
-    float qs_st = 0.25 * (qe + _posTop.x + _posLeftTop.x + _posLeft.x);
+    float ns = 0.5 * (n0 + texture2D(infilmap, posRight).x);
+    float qs_st = 0.25 * (qe + _posRight.x + _posRightBottom.x + _posBottom.x);
     float qs_vect = sqrt(qs*qs + qs_st*qs_st);
     float hf_s = hflow(z0, zs, wse0, wse_s);
     float qs_new = 0.;
     if(hf_s <= 0.){
         qs_new = 0.;
     }else if(hf_s > hf_min){
-        qs_new = almeida2013(hf_s, wse0, wse_s, ns, _posBottom.y, qs, _posTop.y, qs_vect, dy);
-    }else if(hf_s <= hf_min && z0 > zs && wse_s > wse0){
+        qs_new = almeida2013(hf_s, wse0, wse_s, ns, _posLeft.y, qs, _posRight.y, qs_vect, dy);
+    }else if(hf_s <= hf_min && z0 < zs && wse_s > wse0){
         qs_new = - rain_routing(h_s, wse_s, wse0, dy);
-    }else if(hf_s <= hf_min && z0 < zs && wse0 > wse_s){
+    }else if(hf_s <= hf_min && z0 > zs && wse0 > wse_s){
         qs_new = rain_routing(h0, wse0, wse_s, dy);
     }else{
         qs_new = 0.;
     }
 
     if(qs_new > q_thres){
-        qs_new = q_thres;
+       qs_new = q_thres;
     }else if(qs_new < -q_thres){
-        qs_new = -q_thres;
+       qs_new = -q_thres;
     }
     _pos.x = qe_new;
     _pos.y = qs_new;
