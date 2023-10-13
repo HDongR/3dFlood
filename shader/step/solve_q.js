@@ -93,11 +93,11 @@ void main(void) {
         qe_new = 0.;
     }
 
-    if( qe_new > q_thres){
-       qe_new = q_thres;
-    }else if(qe_new < -q_thres){
-       qe_new = -q_thres;
-    }
+    // if( qe_new > q_thres){
+    //    qe_new = q_thres;
+    // }else if(qe_new < -q_thres){
+    //    qe_new = -q_thres;
+    // }
 
     float zs = _posRight.w;
     float h_s = _posRight.z;
@@ -119,11 +119,11 @@ void main(void) {
         qs_new = 0.;
     }
 
-    if(qs_new > q_thres){
-       qs_new = q_thres;
-    }else if(qs_new < -q_thres){
-       qs_new = -q_thres;
-    }
+    // if(qs_new > q_thres){
+    //    qs_new = q_thres;
+    // }else if(qs_new < -q_thres){
+    //    qs_new = -q_thres;
+    // }
     _pos.x = qe_new;
     _pos.y = qs_new;
     gl_FragColor = _pos;

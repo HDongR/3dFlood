@@ -72,9 +72,9 @@ void main() {
         r_height = texture2D( originmap, uv ).w;
     }
 
-    if(drainView){
-        r_height += texture2D( drainmap, uv ).x;
-    }
+    //if(drainView){
+     //   r_height += texture2D( drainmap, uv ).x;
+    //}
 
     vec3 transformed = vec3( position.x, position.y, r_height);
     //<begin_vertex>
