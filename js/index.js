@@ -8,6 +8,8 @@ import velocity from '../shader/step/velocity.js';
 import height from '../shader/step/height.js';
 import advect from '../shader/step/advect.js';
 import hydrology from '../shader/step/hydrology.js';
+import solve_q from '../shader/step/solve_q.js';
+import update_h from '../shader/step/update_h.js';
 
 import * as THREE from 'three';
 
@@ -71,7 +73,7 @@ let simTime = 0; //현재 시뮬레이션 걸린시간
 let t_dt = 0.25; //step dt
 let simTimeView = document.getElementById('simTimeView');
 let rain_per_sec = 3600;
-let rain_val = 50; //시간당 강수량 50mm/h;
+let rain_val = 40; //시간당 강수량 50mm/h;
 
 async function parseTif(src, callback){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -104,7 +106,7 @@ async function parseGeoTiff(){
         beX = realWidth / BOUNDS;
         beY = realHeight / BOUNDS;
     });
-    const buildingData = await parseTif('/asset/building_1_ex.tif');
+    const buildingData = await parseTif('/asset/building.tif');
     const streamData = await parseTif('/asset/stream_1.tif');
     const surf_rough_Data = await parseTif('/asset/tmp_1_surface_roughness_result_1.tiff');
     const surf_infilmax_Data = await parseTif('/asset/tmp_1_surface_infilmax_result_1.tiff');
@@ -861,10 +863,11 @@ async function initWater() {
     weatherOn(weatherView);
 }
 
-let step = [];
 let hydrologyFilter;
-let myFilter1, myFilter2, myFilter3;
-let myRenderTarget1, myRenderTarget2, infilRenderTarget1, infilRenderTarget2;
+let qFilter;
+let hFilter;
+let myFilter1, myFilter2;
+let myRenderTarget1, myRenderTarget2;
 let renderTargets;
 let currentRenderIndex = 0;
 
@@ -892,7 +895,7 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     drainmap = gpuCompute.createTexture();
     infilmap = gpuCompute.createTexture();
 
-    fillTexture( heightmap, originmap, drainmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data); 
+    fillTexture( heightmap, originmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data); 
     
     //heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
     //originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
@@ -903,6 +906,7 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     let uniforms = {
         'heightmap': { value: null },
         'infilmap': { value: infilmap },
+        'drainmap': { value: null },
         'infiltrationRate': { value: infiltrationRate },
         'simTime': { value: 0.0 },
         'rain_per_sec': { value: rain_per_sec },
@@ -913,6 +917,8 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
         'unit': { value: 1.0/BOUNDS.toFixed(1) },
         'dt': { value: t_dt },
         'gravity': { value: 9.81 },
+        'dx': { value: beX },
+        'dy': { value: beY },
         'manningCoefficient': { value: 0.07 },
         'minFluxArea': { value: 0.01 },
         'sourceWaterHeight': { value: 49 },
@@ -922,17 +928,14 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     
 
     hydrologyFilter = gpuCompute.createShaderMaterial( hydrology, uniforms );
+    qFilter = gpuCompute.createShaderMaterial( solve_q, uniforms );
+    hFilter = gpuCompute.createShaderMaterial( update_h, uniforms );
     myFilter1 = gpuCompute.createShaderMaterial( advect, uniforms );
     myFilter2 = gpuCompute.createShaderMaterial( height, uniforms );
-    myFilter3 = gpuCompute.createShaderMaterial( velocity, uniforms );
     
-    step.push(hydrologyFilter);
-    step.push(myFilter1);
-    step.push(myFilter2);
-    step.push(myFilter3);
     
-    myRenderTarget1 = gpuCompute.createRenderTarget(BOUNDS, BOUNDS, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, THREE.LinearFilter, THREE.NearestFilter);
-    myRenderTarget2 = gpuCompute.createRenderTarget(BOUNDS, BOUNDS, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, THREE.LinearFilter, THREE.NearestFilter);
+    myRenderTarget1 = gpuCompute.createRenderTarget(BOUNDS, BOUNDS, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, THREE.NearestFilter, THREE.NearestFilter);
+    myRenderTarget2 = gpuCompute.createRenderTarget(BOUNDS, BOUNDS, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, THREE.NearestFilter, THREE.NearestFilter);
     //infilRenderTarget1 = gpuCompute.createRenderTarget(BOUNDS, BOUNDS, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, THREE.LinearFilter, THREE.NearestFilter);
     //infilRenderTarget2 = gpuCompute.createRenderTarget(BOUNDS, BOUNDS, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, THREE.LinearFilter, THREE.NearestFilter);
 
@@ -968,11 +971,10 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     } );
 }
 
-function fillTexture( heightmap, originmap, drainmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data) {
+function fillTexture( heightmap, originmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data) {
 
     const heightmap_pixels = heightmap.image.data;
     const originmap_pixcels = originmap.image.data;
-    const drainmap_pixcels = drainmap.image.data;
     const infilmap_pixcels = infilmap.image.data;
 
     let cnt = 0;
@@ -1013,7 +1015,7 @@ function fillTexture( heightmap, originmap, drainmap, infilmap, terrainData, bui
             heightmap_pixels[ xPox ] = 0;
             heightmap_pixels[ yPos ] = 0;
             heightmap_pixels[ zPos ] = streamHeight;
-            heightmap_pixels[ wPos ] = dbg? 10000:terrainData[cnt]// + buildingHeight;
+            heightmap_pixels[ wPos ] = dbg? 10000:terrainData[cnt]//+buildingHeight;
 
             originmap_pixcels[ xPox ] = 0;
             originmap_pixcels[ yPos ] = 0;
@@ -1028,13 +1030,6 @@ function fillTexture( heightmap, originmap, drainmap, infilmap, terrainData, bui
             cnt++;
 
         }
-    }
-
-    //drainmap 넣기
-    for(let i=0; i<swmm.nodes.length; ++i){
-        let node = swmm.nodes[i];
-        let pos = xyPos(node.index_x, node.index_y);
-        drainmap_pixcels[pos] = 100;
     }
 
 }
@@ -1119,7 +1114,7 @@ let elapsed_time = 0.0;
 let input_ptr = _malloc(8);
 Module.setValue(input_ptr, elapsed_time, "double");
 let dt1d = 0;
-function drainageStep(){
+function drainageStep(rt){
     let solve_dt = ()=>{
         let olds = swmm_getNewRoutingTime() / 1000.;
         let news = swmm_getOldRoutingTime() / 1000.;
@@ -1145,26 +1140,27 @@ function drainageStep(){
     let apply_linkage = ()=>{
 
  
-        renderer.readRenderTargetPixels( renderTargets[currentRenderIndex] , 0, 0, BOUNDS, BOUNDS, readWaterLevelImage );
-        const pixels = new Float32Array( readWaterLevelImage.buffer );
+        renderer.readRenderTargetPixels( rt , 0, 0, BOUNDS, BOUNDS, readWaterLevelImage );
+        const readPixels = new Float32Array( readWaterLevelImage.buffer );
 
-        for(let i=0; i<pixels.length; ++i){
-            if(pixels[i] >= 9999.){
-                //debugger;
-            }
-        }
+        // for(let i=0; i<pixels.length; ++i){
+        //     if(pixels[i] >= 9999.){
+        //         //debugger;
+        //     }
+        // }
 
-        let x = BOUNDS/2;
-        let y = BOUNDS/2;
-        let r = xyPos(x, y);
-        //console.log(pixels[r], pixels[r+1], pixels[r+2], pixels[r+3]); 
-        if(pixels[r+2] == 0.5){
-            //debugger
-        }
+        // let x = BOUNDS/2;
+        // let y = BOUNDS/2;
+        // let r = xyPos(x, y);
+        // //console.log(pixels[r], pixels[r+1], pixels[r+2], pixels[r+3]); 
+        // if(pixels[r+2] == 0.5){
+        //     //debugger
+        // }
 
 
         //let startTime = performance.now(); // 측정 시작
         
+        const drainmap_pixcels = drainmap.image.data;
         for(let i=0; i<swmm.nodes.length; ++i){
             let node = swmm.nodes[i];
 
@@ -1174,8 +1170,19 @@ function drainageStep(){
             //let depth = swmm_getNodeDepth(i);
 
             //int index, double h, double z, double cell_surf
-            let flow = apply_linkage_flow(i, 0.1, node.Invert + 2, node.Invert, 5, dt1d);
+            
+            let pos = xyPos(node.index_x, node.index_y);
+            //let vx = readPixels[pos];
+            //let vy = readPixels[pos+1];
+            let h = readPixels[pos+2];
+            let z = readPixels[pos+3];
+
+            let qdrain = apply_linkage_flow(i, h, z, node.Invert, beX*beY, dt1d);
             let Name = node.Name;
+
+            drainmap_pixcels[pos] = qdrain;
+            
+
             //if(Name == 'O_7'){
             //    let rtnId = swmm_getNodeID(i);
             //}
@@ -1236,14 +1243,29 @@ async function compute(){
         let rt2 = renderTargets[nextRenderIndex];
 
         hydrologyFilter.uniforms.simTime.value = simTime;
-        hydrologyFilter.uniforms.heightmap.value = rt1.texture;
+        hydrologyFilter.uniforms.heightmap.value = rt2.texture;
         //hydrologyFilter.uniforms.infilmap.value = infilRenderTarget2.texture;
-        gpuCompute.doRenderTarget( hydrologyFilter, rt2 );
+        gpuCompute.doRenderTarget( hydrologyFilter, rt1 );
 
-        checkTexture(rt2);
+        //checkTexture(rt2);
         //checkTexture(infilRenderTarget1);
 
-        myFilter1.uniforms.heightmap.value = rt2.texture;
+        if(true){
+            drainageStep(rt1);
+        }
+
+        //solve_q
+        qFilter.uniforms.heightmap.value = rt1.texture;
+        gpuCompute.doRenderTarget( qFilter, rt2 );
+
+        //update_h
+        hFilter.uniforms.heightmap.value = rt2.texture;
+        hFilter.uniforms.drainmap.value = drainmap;
+        gpuCompute.doRenderTarget( hFilter, rt1 );
+        checkTexture(rt1);
+
+        //myFilter1.uniforms.drainmap.value = drainmap;
+        //myFilter1.uniforms.heightmap.value = rt2.texture;
         //myFilter1.uniforms.infilmap.value = infilRenderTarget1.texture;
         //getReadPixcel('init', rt2, true);
         //gpuCompute.doRenderTarget( myFilter1, rt1 );
@@ -1256,10 +1278,6 @@ async function compute(){
         //getReadPixcel('height', rt2, false);
         //gpuCompute.doRenderTarget( myFilter3, rt1 );
         //getReadPixcel('velocity', rt1, false);
-
-        if(true){
-            drainageStep();
-        }
         
         
         simTime += t_dt;
@@ -1280,7 +1298,6 @@ function convTime(){
 
 async function render() {
     await compute();
-
     terrainMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture; 
     water.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex].texture;
     water.material.uniforms[ 'time' ].value += 1.0 / 60.0;

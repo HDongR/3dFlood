@@ -23,7 +23,7 @@ ROUTING_STEP          2.0
 ALLOW_PONDING          YES          
 INERTIAL_DAMPING          NONE          
 VARIABLE_STEP          .5          
-LENGTHENING_STEP          0.0          
+LENGTHENING_STEP          10.0          
 MIN_SURFAREA          25          
 NORMAL_FLOW_LIMITED          FROUDE          
 SKIP_STEADY_STATE          NO          

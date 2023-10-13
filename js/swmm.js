@@ -158,10 +158,11 @@ export function apply_linkage_flow(index, h, z, node_invert_elev, cell_surf, dt1
 
     //# apply flow to 2D model (m/s) and drainage model (cfs)
     //arr_qdrain[row, col] = new_linkage_flow / cell_surf
-    let inflowRst = swmm_addNodeInflow(index, - new_linkage_flow);
+    let qdrain = new_linkage_flow / cell_surf;
+    let inflowRst = swmm_addNodeInflow(index, - new_linkage_flow/FOOT3);
     //# update node array
     swmm_setNodeLinkageFlow(index, new_linkage_flow);
     swmm_setNodeLinkageType(index, linkage_type);
     //arr_node[i] = node
-    return new_linkage_flow / FOOT3;
+    return qdrain;
 }
