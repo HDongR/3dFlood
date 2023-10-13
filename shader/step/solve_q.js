@@ -9,7 +9,7 @@ uniform float dx, dy;
 #define theta 0.9
 #define hf_min 0.005
 #define v_route 0.1
-#define q_thres 1.0
+#define q_thres 10.0
 
 float hflow(float z0, float z1, float wse0, float wse1){
     return max(wse1, wse0) - max(z1, z0);
