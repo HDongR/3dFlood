@@ -51,8 +51,10 @@ void main(void) {
     vec2 posRight2 = uv + vec2( unit*2., 0.0  );
     vec2 posTop2 = uv + vec2( 0.0, unit*2. );
     vec2 posBottom2 = uv + vec2( 0.0, - unit*2. );
+    vec2 posRightTop = uv + vec2( unit, unit );
     vec2 posRightBottom = uv + vec2( unit, - unit );
     vec2 posLeftTop = uv + vec2( - unit, unit );
+    vec2 posLeftBottom = uv + vec2( - unit, - unit );
 
     vec4 _pos = texture2D(heightmap, pos);
     vec4 _posLeft = texture2D(heightmap, posLeft);
@@ -63,8 +65,10 @@ void main(void) {
     vec4 _posRight2 = texture2D(heightmap, posRight2);
     vec4 _posTop2 = texture2D(heightmap, posTop2);
     vec4 _posBottom2 = texture2D(heightmap, posBottom2);
+    vec4 _posRightTop = texture2D(heightmap, posRightTop);
     vec4 _posRightBottom = texture2D(heightmap, posRightBottom);
     vec4 _posLeftTop = texture2D(heightmap, posLeftTop);
+    vec4 _posLeftBottom = texture2D(heightmap, posLeftBottom);
     
     float z0 = _pos.w;
     float h0 = _pos.z;
@@ -73,18 +77,18 @@ void main(void) {
     float qe = _pos.x;
     float qs = _pos.y;
 
-    float ze = _posTop.w;
-    float h_e = _posTop.z;
+    float ze = _posRight.w;
+    float h_e = _posRight.z;
     float wse_e = ze + h_e;
-    float ne = 0.5 * (n0 + texture2D(infilmap, posTop).x);
-    float qe_st = 0.25 * (qs + _posLeft.y + _posLeftTop.y + _posTop.y);
+    float ne = 0.5 * (n0 + texture2D(infilmap, posRight).x);
+    float qe_st = 0.25 * (qs + _posBottom.y + _posRightBottom.y + _posRight.y);
     float qe_vect = sqrt(qe*qe + qe_st*qe_st);
     float hf_e = hflow(z0, ze, wse0, wse_e); 
     float qe_new = 0.;
     if(hf_e <= 0.){
         qe_new = 0.;
     }else if(hf_e > hf_min){
-        qe_new = almeida2013(hf_e, wse0, wse_e, ne, _posBottom.x, qe, _posTop.x, qe_vect, dx);
+        qe_new = almeida2013(hf_e, wse0, wse_e, ne, _posLeft.x, qe, _posRight.x, qe_vect, dx);
     }else if(hf_e <= hf_min && z0 < ze && wse_e > wse0){
         qe_new = - rain_routing(h_e, wse_e, wse0, dx);
     }else if(hf_e <= hf_min && z0 > ze && wse0 > wse_e){
@@ -99,18 +103,18 @@ void main(void) {
     //    qe_new = -q_thres;
     // }
 
-    float zs = _posRight.w;
-    float h_s = _posRight.z;
+    float zs = _posBottom.w;
+    float h_s = _posBottom.z;
     float wse_s = zs + h_s;
-    float ns = 0.5 * (n0 + texture2D(infilmap, posRight).x);
-    float qs_st = 0.25 * (qe + _posRight.x + _posRightBottom.x + _posBottom.x);
+    float ns = 0.5 * (n0 + texture2D(infilmap, posTop).x);
+    float qs_st = 0.25 * (qe + _posBottom.x + _posLeftTop.x + _posLeft.x);
     float qs_vect = sqrt(qs*qs + qs_st*qs_st);
     float hf_s = hflow(z0, zs, wse0, wse_s);
     float qs_new = 0.;
     if(hf_s <= 0.){
         qs_new = 0.;
     }else if(hf_s > hf_min){
-        qs_new = almeida2013(hf_s, wse0, wse_s, ns, _posLeft.y, qs, _posRight.y, qs_vect, dy);
+        qs_new = almeida2013(hf_s, wse0, wse_s, ns, _posBottom.y, qs, _posBottom.y, qs_vect, dy);
     }else if(hf_s <= hf_min && z0 < zs && wse_s > wse0){
         qs_new = - rain_routing(h_s, wse_s, wse0, dy);
     }else if(hf_s <= hf_min && z0 > zs && wse0 > wse_s){

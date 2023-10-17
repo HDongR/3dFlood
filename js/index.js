@@ -876,6 +876,7 @@ let currentRenderIndex = 0;
 let readWaterLevelRenderTarget;
 let readWaterLevelImage;
 let heightmap;
+let buildingmap;
 let originmap;
 let drainmap;
 let infilmap;
@@ -894,10 +895,11 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
 
     heightmap = gpuCompute.createTexture();
     originmap = gpuCompute.createTexture();
+    buildingmap = gpuCompute.createTexture();
     drainmap = gpuCompute.createTexture();
     infilmap = gpuCompute.createTexture();
 
-    fillTexture( heightmap, originmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data); 
+    fillTexture( heightmap, originmap, buildingmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data); 
     
     //heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
     //originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
@@ -907,6 +909,7 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     
     let uniforms = {
         'heightmap': { value: null },
+        'buildingmap': { value: buildingmap },
         'infilmap': { value: infilmap },
         'drainmap': { value: null },
         'infiltrationRate': { value: infiltrationRate },
@@ -951,7 +954,9 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     
     terrainMaterial.uniforms[ 'originmap' ].value = originmap;
     terrainMaterial.uniforms[ 'drainmap' ].value = drainmap;
+    //water.material.uniforms[ 'unit' ].value = originmap;
     water.material.uniforms[ 'originmap' ].value = originmap;
+    //water.material.uniforms[ 'buildingmap' ].value = buildingmap;
 
     const error = gpuCompute.init();
     if ( error !== null ) { 
@@ -972,10 +977,11 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     } );
 }
 
-function fillTexture( heightmap, originmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data) {
+function fillTexture( heightmap, originmap, buildingmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data) {
 
     const heightmap_pixels = heightmap.image.data;
     const originmap_pixcels = originmap.image.data;
+    const buildingmap_pixcels = buildingmap.image.data;
     const infilmap_pixcels = infilmap.image.data;
 
     let cnt = 0;
@@ -996,7 +1002,7 @@ function fillTexture( heightmap, originmap, infilmap, terrainData, buildingData,
             let streamHeight = streamData[cnt];
             
             if(streamHeight != 0){
-                streamHeight = 10;
+                streamHeight = 5
             }else{
                 streamHeight = 0;
             }
@@ -1017,6 +1023,11 @@ function fillTexture( heightmap, originmap, infilmap, terrainData, buildingData,
             heightmap_pixels[ yPos ] = 0;
             heightmap_pixels[ zPos ] = streamHeight;
             heightmap_pixels[ wPos ] = terrainData[cnt]+buildingHeight;
+
+            buildingmap_pixcels[ xPox ] = buildingHeight;
+            buildingmap_pixcels[ yPos ] = 0;
+            buildingmap_pixcels[ zPos ] = 0;
+            buildingmap_pixcels[ wPos ] = 0;
 
             originmap_pixcels[ xPox ] = 0;
             originmap_pixcels[ yPos ] = 0;
@@ -1266,8 +1277,8 @@ function solve_dt(pixels){
             
         }
     }
-    if(false){
-        if(_prefix == 'updateH'){
+    if(true){
+        //if(_prefix == 'updateH'){
             let min_dim = Math.min(beX, beY);
             if(maxh > 0){
                 dt = cfl * (min_dim / Math.sqrt(gravity*maxh));
@@ -1275,8 +1286,11 @@ function solve_dt(pixels){
             }else{
                 dt = dtmax;
             }
-        }
+
+            console.log(maxh, dt);
+        //}
     }
+    
 
     // if(_prefix == 'ini'){
     //     c_i = maxi;
@@ -1291,15 +1305,15 @@ function solve_dt(pixels){
     //     maxj = c_j;
     // }
 
-    maxi = 68;
-    maxj = 511;
+    // maxi = 68;
+    // maxj = 511;
  
-    let pos = xyPos(maxi, maxj);
-    let posLeft = xyPos(maxi-1, maxj);
-    let posRight = xyPos(maxi+1, maxj);
-    let posTop = xyPos(maxi, maxj+1);
-    let posBottom = xyPos(maxi, maxj-1);
-    console.log(_prefix,'center', maxi, maxj, maxh, pixels[pos], pixels[pos+1], pixels[pos+2], pixels[pos+3]);
+    // let pos = xyPos(maxi, maxj);
+    // let posLeft = xyPos(maxi-1, maxj);
+    // let posRight = xyPos(maxi+1, maxj);
+    // let posTop = xyPos(maxi, maxj+1);
+    // let posBottom = xyPos(maxi, maxj-1);
+    // console.log(_prefix,'center', maxi, maxj, maxh, pixels[pos], pixels[pos+1], pixels[pos+2], pixels[pos+3]);
     //console.log(_prefix,'left', maxi, maxj, maxh, pixels[posLeft], pixels[posLeft+1], pixels[posLeft+2], pixels[posLeft+3]);
     //console.log(_prefix,'right', maxi, maxj, maxh, pixels[posRight], pixels[posRight+1], pixels[posRight+2], pixels[posRight+3]);
     //console.log(_prefix,'top', maxi, maxj, maxh, pixels[posTop], pixels[posTop+1], pixels[posTop+2], pixels[posTop+3]);
@@ -1331,42 +1345,25 @@ async function compute(){
 
         let rt1 = renderTargets[currentRenderIndex];
         let rt2 = renderTargets[nextRenderIndex];
+         
+        hydrologyFilter.uniforms.dt.value = dt;
+        hydrologyFilter.uniforms.simTime.value = simTime;
+        hydrologyFilter.uniforms.heightmap.value = rt2.texture;
+        gpuCompute.doRenderTarget( hydrologyFilter, rt1 );
         
-        _prefix = "ini"
-        checkTexture(rt2);
-
-        //if(simTime == hydrologyDt){
-            isHydro = true;
-            console.log('hyd');
-            hydrologyDt += dtinf;
-            hydrologyFilter.uniforms.dt.value = dtinf;
-            hydrologyFilter.uniforms.simTime.value = simTime;
-            hydrologyFilter.uniforms.heightmap.value = rt2.texture;
-            gpuCompute.doRenderTarget( hydrologyFilter, rt1 );
-        // }else{
-        //     isHydro = false;
-        //     rt1 = renderTargets[nextRenderIndex];
-        //     rt2 = renderTargets[currentRenderIndex];
-        // }
-
- 
         if(false){
             drainageStep(rt1);
         }
-        _prefix = "hydr"
-        checkTexture(rt1);
-        //solve_q
+
         qFilter.uniforms.dt.value = dt;
         qFilter.uniforms.heightmap.value = rt1.texture;
         gpuCompute.doRenderTarget( qFilter, rt2 );
-        _prefix = "qFilter"
-        checkTexture(rt2);
-        //update_h
+
         hFilter.uniforms.dt.value = dt;
         hFilter.uniforms.heightmap.value = rt2.texture;
         hFilter.uniforms.drainmap.value = drainmap;
         gpuCompute.doRenderTarget( hFilter, rt1 );
-        _prefix = "updateH"
+        //_prefix = "updateH"
         checkTexture(rt1);
 
         //myFilter1.uniforms.drainmap.value = drainmap;

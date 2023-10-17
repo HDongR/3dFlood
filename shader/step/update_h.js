@@ -1,6 +1,7 @@
 export default `
 uniform float time, dt, unit;
 uniform sampler2D heightmap;
+uniform sampler2D buildingmap;
 uniform sampler2D drainmap;
 uniform float dx, dy;
 
@@ -60,6 +61,31 @@ void main(void) {
     
     _pos.z = h_new;
     gl_FragColor = _pos;
+
+    // vec4 building = texture2D(buildingmap, uv);
+    // if(building.x > 0.){
+    //     if(_posLeft.x > 0.){
+    //         discard;
+    //     }  
+    //     if(_posRight.x > 0.){
+    //         discard;
+    //     }  
+    //     if(_posTop.x > 0.){
+    //         discard;
+    //     }  
+    //     if(_posBottom.x > 0.){
+    //         discard;
+    //     }  
+    //     // _posRight = texture2D(heightmap, posRight);
+    //     // _posTop = texture2D(heightmap, posTop);
+    //     // _posBottom = texture2D(heightmap, posBottom);
+    //     // _posLeft2 = texture2D(heightmap, posLeft2);
+    //     // _posRight2 = texture2D(heightmap, posRight2);
+    //     // _posTop2 = texture2D(heightmap, posTop2);
+    //     // _posBottom2 = texture2D(heightmap, posBottom2);
+    //     // _posRightBottom = texture2D(heightmap, posRightBottom);
+    //     // _posLeftTop = texture2D(heightmap, posLeftTop);
+    // }
 }
 
 `
