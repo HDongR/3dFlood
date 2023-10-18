@@ -31,9 +31,10 @@ void main(void) {
     float o_inf = cap_inf_rate(dt_h, here.z, r_infrate);
 
     float dt_rain = dt / rain_per_sec;
+    //float h_new = max( here.z + ((rain*dt_rain) / 1000.), 0.);
     float h_new = max( here.z + ((rain*dt_rain - o_inf*dt_h) / 1000.), 0.);
 
-    //here.z = h_new;
+    here.z = h_new;
     gl_FragColor = here;
     //gl_FragColor = vec4(K,here.z,dt_h,r_infrate);
 }

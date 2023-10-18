@@ -79,8 +79,10 @@ class Water extends Mesh {
 				UniformsLib[ 'fog' ],
 				UniformsLib[ 'lights' ],
 				{   
+                    'unit': {value: null},
                     'heightmap': {value: null},
                     'originmap': {value: null},
+                    'buildingmap': {value: null},
 					'normalSampler': { value: null },
 					'mirrorSampler': { value: null },
 					'alpha': { value: 1.0 },
@@ -163,7 +165,9 @@ class Water extends Mesh {
 
 			fragmentShader: /* glsl */`
 				uniform sampler2D heightmap;
+				uniform sampler2D buildingmap;
 				uniform sampler2D mirrorSampler;
+				uniform float unit;
 				uniform float alpha;
 				uniform float time;
 				uniform float size;
@@ -177,6 +181,8 @@ class Water extends Mesh {
 				varying vec4 mirrorCoord;
 				varying vec4 worldPosition;
 				varying vec2 vUv;
+
+				#define discardWaterHeight 0.1
 				
 				vec4 getNoise( vec2 uv ) {
 					vec2 uv0 = ( uv / 103.0 ) + vec2(time / 17.0, time / 29.0);
@@ -233,11 +239,89 @@ class Water extends Mesh {
 
 					
 					vec4 data = texture2D( heightmap, vUv );
+					vec4 building = texture2D( buildingmap, vUv );
 
 					
 					gl_FragColor = vec4( outgoingLight, alpha );
 
-					if(data.z <= 0.1){
+					if(data.z > 0.1){
+						
+						vec2 posLeft = vUv + vec2( - unit, 0.0 );
+						vec2 posRight = vUv + vec2( unit, 0.0  );
+						vec2 posTop = vUv + vec2( 0.0, unit );
+						vec2 posBottom = vUv + vec2( 0.0, - unit );
+
+						vec2 posRightTop = vUv + vec2( unit, unit );
+						vec2 posRightBottom = vUv + vec2( unit, - unit );
+						vec2 posLeftTop = vUv + vec2( - unit, unit );
+						vec2 posLeftBottom = vUv + vec2( - unit, - unit );
+
+						vec4 _pos = texture2D(buildingmap, vUv);
+
+						vec4 _posLeft = texture2D(buildingmap, posLeft);
+						vec4 _posRight = texture2D(buildingmap, posRight);
+						vec4 _posTop = texture2D(buildingmap, posTop);
+						vec4 _posBottom = texture2D(buildingmap, posBottom);
+						vec4 h_posLeft = texture2D(heightmap, posLeft);
+						vec4 h_posRight = texture2D(heightmap, posRight);
+						vec4 h_posTop = texture2D(heightmap, posTop);
+						vec4 h_posBottom = texture2D(heightmap, posBottom);
+						 
+						vec4 _posRightTop = texture2D(buildingmap, posRightTop);
+						vec4 _posRightBottom = texture2D(buildingmap, posRightBottom);
+						vec4 _posLeftTop = texture2D(buildingmap, posLeftTop);
+						vec4 _posLeftBottom = texture2D(buildingmap, posLeftBottom);
+						vec4 h_posRightTop = texture2D(heightmap, posRightTop);
+						vec4 h_posRightBottom = texture2D(heightmap, posRightBottom);
+						vec4 h_posLeftTop = texture2D(heightmap, posLeftTop);
+						vec4 h_posLeftBottom = texture2D(heightmap, posLeftBottom);
+
+						if(
+							_pos.x > 0.
+							&&
+							_posLeft.x > 0.
+							&&
+							_posRight.x > 0.
+							&&
+							_posTop.x > 0.
+							&&
+							_posBottom.x > 0.
+							&&
+							_posRightTop.x > 0.
+							&&
+							_posRightBottom.x > 0.
+							&&
+							_posLeftTop.x > 0.
+							&&
+							_posLeftBottom.x > 0.
+							){
+							
+						}else if(_posLeft.x > 0. && h_posLeft.z <= discardWaterHeight){
+							discard;
+						}else if(_posRight.x > 0. && h_posRight.z <= discardWaterHeight){
+							discard;
+						}else if(_posTop.x > 0. && h_posTop.z <= discardWaterHeight){
+							discard;
+						}else if(_posBottom.x > 0. && h_posBottom.z <= discardWaterHeight){
+							discard;
+						}
+
+						else if(_posRightTop.x > 0. && h_posRightTop.z <= discardWaterHeight){
+							discard;
+						}
+						else if(_posRightBottom.x > 0. && h_posRightBottom.z <= discardWaterHeight){
+							discard;
+						}
+						else if(_posLeftTop.x > 0. && h_posLeftTop.z <= discardWaterHeight){
+							discard;
+						}
+						else if(_posLeftBottom.x > 0. && h_posLeftBottom.z <= discardWaterHeight){
+							discard;
+						}
+						 
+					}
+
+					if(data.z <= discardWaterHeight){
 						discard;
 					}
 

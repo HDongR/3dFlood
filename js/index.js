@@ -68,6 +68,7 @@ let realHeight = 0;
 let beX = 0;
 let beY = 0;
 
+let initStreamHeight = 0.5; //초기 강의 수위 m
 let cfl = 0.7;
 let infiltrationRate = 1.0; //침투능 효율
 let simTime = 0; //현재 시뮬레이션 걸린시간
@@ -75,7 +76,7 @@ let dtmax = 0.25;
 let dt = 0.25; //step dt
 let simTimeView = document.getElementById('simTimeView');
 let rain_per_sec = 3600;
-let rain_val = 40; //시간당 강수량 50mm/h; 
+let rain_val = 10; //시간당 강수량 50mm/h; 
 
 async function parseTif(src, callback){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -168,7 +169,7 @@ async function loadSwmm(inpFile){
                 index_x = Math.abs(index_x);
                 index_y = Math.abs(index_y);
                 if(index_x >= BOUNDS || index_y >= BOUNDS){
-                    debugger
+                    junction['containStudy'] = false;
                 }
                 //console.log(jkey, index_x, index_y);
 
@@ -211,6 +212,7 @@ async function loadSwmm(inpFile){
                 index_x = Math.abs(index_x);
                 index_y = Math.abs(index_y);
                 if(index_x >= BOUNDS || index_y >= BOUNDS){
+                    outfall['containStudy'] = false;
                     debugger
                 }
                 //console.log(okey, index_x, index_y);
@@ -246,6 +248,12 @@ async function loadSwmm(inpFile){
             }else if(toNode && toNode.startsWith('O')){
                 toNode = inp.OUTFALLS[toNode];
             }
+
+            //스터디 범위 밖이면 무시
+            if(!fromNode['containStudy'] || !toNode['containStudy']){
+                continue;
+            }
+
             let length_x = fromNode.world_x - toNode.world_x;
             let length_z = fromNode.world_z - toNode.world_z;
             let length_y = Math.abs(Number(fromNode.Invert) - Number(toNode.Invert));
@@ -273,41 +281,40 @@ async function loadSwmm(inpFile){
             conduit['toNode'] = toNode;
 
             swmm.links.push(conduit);
-            //debugger;
         }
 
 
-        let startTime = performance.now(); // 측정 시작
-        for(let i=0; i<junctionkeys.length; ++i){
-            let Name = junctionkeys[i];
-            const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
+        //let startTime = performance.now(); // 측정 시작
+        // for(let i=0; i<junctionkeys.length; ++i){
+        //     let Name = junctionkeys[i];
+        //     const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
 
-            let inflow = Module.getValue(node, 'double');
-            let outflow = Module.getValue(node + 8, 'double');
-            let head = Module.getValue(node + 16, 'double');
-            let crestElev = Module.getValue(node + 24, 'double');
-            let type = Module.getValue(node + 32, 'i32');
-            let subIndex = Module.getValue(node + 36, 'i32');
-            let InverElev = Module.getValue(node + 40, 'double');
-            let InitDepth = Module.getValue(node + 48, 'double');
-            let fullDepth = Module.getValue(node + 56, 'double');
-            let surDepth = Module.getValue(node + 64, 'double');
-            let pondedArea = Module.getValue(node + 72, 'double');
-            let degree = Module.getValue(node + 80, 'i32');
-            let updated = String.fromCharCode(Module.getValue(node + 84, 'i8'));
-            let crownElev = Module.getValue(node + 88, 'double');
-            let losses = Module.getValue(node + 96, 'double');
-            let newVolume = Module.getValue(node + 104, 'double');
-            let fullVolume = Module.getValue(node + 112, 'double');
-            let overflow = Module.getValue(node + 120, 'double');
-            let newDepth = Module.getValue(node + 128, 'double');
-            let newLatFlow = Module.getValue(node + 136, 'double');
-            _free(node);
-            //console.log('Name:'+Name+" invEl:"+InverElev + " fullDepth:"+fullDepth);
-        }
+        //     let inflow = Module.getValue(node, 'double');
+        //     let outflow = Module.getValue(node + 8, 'double');
+        //     let head = Module.getValue(node + 16, 'double');
+        //     let crestElev = Module.getValue(node + 24, 'double');
+        //     let type = Module.getValue(node + 32, 'i32');
+        //     let subIndex = Module.getValue(node + 36, 'i32');
+        //     let InverElev = Module.getValue(node + 40, 'double');
+        //     let InitDepth = Module.getValue(node + 48, 'double');
+        //     let fullDepth = Module.getValue(node + 56, 'double');
+        //     let surDepth = Module.getValue(node + 64, 'double');
+        //     let pondedArea = Module.getValue(node + 72, 'double');
+        //     let degree = Module.getValue(node + 80, 'i32');
+        //     let updated = String.fromCharCode(Module.getValue(node + 84, 'i8'));
+        //     let crownElev = Module.getValue(node + 88, 'double');
+        //     let losses = Module.getValue(node + 96, 'double');
+        //     let newVolume = Module.getValue(node + 104, 'double');
+        //     let fullVolume = Module.getValue(node + 112, 'double');
+        //     let overflow = Module.getValue(node + 120, 'double');
+        //     let newDepth = Module.getValue(node + 128, 'double');
+        //     let newLatFlow = Module.getValue(node + 136, 'double');
+        //     _free(node);
+        //     //console.log('Name:'+Name+" invEl:"+InverElev + " fullDepth:"+fullDepth);
+        // }
         
-        let endTime = performance.now(); // 측정 종료
-        console.log(`걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
+        //let endTime = performance.now(); // 측정 종료
+        //console.log(`걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
 
         //let rpt = intArrayToString(FS.findObject('/tmp/Example1x.rpt').contents);
         //console.log(rpt);
@@ -432,7 +439,7 @@ async function addDrainNetworkMesh(){
         let height = resultDepth-j_elevation;
 
         const geometry = new THREE.CylinderGeometry( width/beX, width/beY, height, 24, 1, true, 0 ); 
-        const material = new THREE.MeshPhongMaterial( {wireframe:false, depthTest:true, transparent:true, opacity:0.5, color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
+        const material = new THREE.MeshPhongMaterial( {wireframe:false, depthTest:true, /*transparent:true, opacity:0.5,*/ color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
         const cylinder = new THREE.Mesh( geometry, material ); 
         cylinder.position.x = node.world_x;
         cylinder.position.z = node.world_z;
@@ -515,7 +522,7 @@ async function addDrainNetworkMesh(){
         //console.log(t_degree, b_degree, h_degree);
 
         const geometry = new THREE.CylinderGeometry( c_geom1/beX, c_geom1/beY, _3dLen, 24, 1, true, 0 ); 
-        const material = new THREE.MeshPhongMaterial( {wireframe:false,depthTest:true,transparent:true, opacity:0.5, color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
+        const material = new THREE.MeshPhongMaterial( {wireframe:false,depthTest:true,/*transparent:true, opacity:0.5,*/ color: 0xaaaaaa, emissive: 0x072534, side: THREE.DoubleSide, flatShading: true} ); 
         const cylinder = new THREE.Mesh( geometry, material ); 
         cylinder.position.x = (prevJunction.world_x + nextJunction.world_x) / 2;
         cylinder.position.z = (prevJunction.world_z + nextJunction.world_z) / 2;
@@ -954,9 +961,9 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     
     terrainMaterial.uniforms[ 'originmap' ].value = originmap;
     terrainMaterial.uniforms[ 'drainmap' ].value = drainmap;
-    //water.material.uniforms[ 'unit' ].value = originmap;
+    water.material.uniforms[ 'unit' ].value = 1.0/BOUNDS.toFixed(1);
     water.material.uniforms[ 'originmap' ].value = originmap;
-    //water.material.uniforms[ 'buildingmap' ].value = buildingmap;
+    water.material.uniforms[ 'buildingmap' ].value = buildingmap;
 
     const error = gpuCompute.init();
     if ( error !== null ) { 
@@ -1002,7 +1009,7 @@ function fillTexture( heightmap, originmap, buildingmap, infilmap, terrainData, 
             let streamHeight = streamData[cnt];
             
             if(streamHeight != 0){
-                streamHeight = 5
+                streamHeight = initStreamHeight;
             }else{
                 streamHeight = 0;
             }
@@ -1138,8 +1145,9 @@ let elapsed_time = 0.0;
 let input_ptr = _malloc(8);
 Module.setValue(input_ptr, elapsed_time, "double");
 let dt1d = 0;
+let dt1d_sum = 0;
 function drainageStep(rt){
-    let solve_dt = ()=>{
+    let swmm_solve_dt = ()=>{
         let olds = swmm_getNewRoutingTime() / 1000.;
         let news = swmm_getOldRoutingTime() / 1000.;
         dt1d = news - olds;
@@ -1187,7 +1195,9 @@ function drainageStep(rt){
         const drainmap_pixcels = drainmap.image.data;
         for(let i=0; i<swmm.nodes.length; ++i){
             let node = swmm.nodes[i];
-
+            if(!node['containStudy']){
+                continue;
+            }
             //swmm_setNodeFullDepth(i, 2.0/FOOT);
             //let head = swmm_getNodeHead(i);
             //let crestElev = swmm_getNodeCrestElev(i);
@@ -1246,7 +1256,7 @@ function drainageStep(rt){
         
     }
 
-    solve_dt();
+    swmm_solve_dt();
     step();
     apply_linkage();
 
@@ -1254,14 +1264,14 @@ function drainageStep(rt){
 }
 
 let _prefix = "";
-function solve_dt(pixels){
+function ____(pixels){
     let maxh = Number.MIN_VALUE;
 
     let maxi = -1;
     let maxj = -1;
     let maxY = 0;
     //let startTime = performance.now(); // 측정 시작
-    
+    let rainVol = 0;
     for ( let j = BOUNDS-1; j >= 0 ; j -- ) {
         for ( let i = 0; i < BOUNDS; i ++ ) {
             let pos = xyPos(i,j);
@@ -1272,11 +1282,12 @@ function solve_dt(pixels){
                 maxi = i;
                 maxj = j;
                 maxY = pixels[zPos+1] + maxh + 10;
-                
             }
             
+            rainVol+=pixels[zPos];
         }
     }
+    console.log('simTime'+simTimeView.textContent, 'rainVol:'+rainVol);
     if(true){
         //if(_prefix == 'updateH'){
             let min_dim = Math.min(beX, beY);
@@ -1287,7 +1298,7 @@ function solve_dt(pixels){
                 dt = dtmax;
             }
 
-            console.log(maxh, dt);
+            //console.log(maxh, dt);
         //}
     }
     
@@ -1321,13 +1332,45 @@ function solve_dt(pixels){
 
 }
 
-async function checkTexture(rt){
+async function solve_dt(rt){
     renderer.readRenderTargetPixels( rt , 0, 0, BOUNDS, BOUNDS, readWaterLevelImage );
     const pixels = new Float32Array( readWaterLevelImage.buffer );
     //console.log(pixels[0], pixels[1], pixels[2], pixels[3]);
     
+    let maxh = Number.MIN_VALUE;
+
+    let maxi = -1;
+    let maxj = -1;
+    let maxY = 0;
+    //let startTime = performance.now(); // 측정 시작
+    let rainVol = 0;
+    for ( let j = BOUNDS-1; j >= 0 ; j -- ) {
+        for ( let i = 0; i < BOUNDS; i ++ ) {
+            let pos = xyPos(i,j);
+            //console.log('idx'+pos);
+            let zPos = pos+2;
+            if(pixels[zPos] > maxh){
+                maxh = pixels[zPos];
+                maxi = i;
+                maxj = j;
+                maxY = pixels[zPos+1] + maxh + 10;
+            }
+            
+            rainVol+=pixels[zPos];
+        }
+    }
+    //console.log('simTime'+simTimeView.textContent, 'rainVol:'+rainVol);
     
-    solve_dt(pixels);
+    let min_dim = Math.min(beX, beY);
+    if(maxh > 0){
+        dt = cfl * (min_dim / Math.sqrt(gravity*maxh));
+        dt = Math.min(dtmax, dt);
+    }else{
+        dt = dtmax;
+    }
+
+    //console.log(maxh, dt);
+    
   
     //let endTime = performance.now(); // 측정 종료
     //console.log(`걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
@@ -1337,10 +1380,13 @@ async function checkTexture(rt){
 
 let dtinf = 60.0;
 let hydrologyDt = 0.0;
+let next_surf = 0.0;
+let next_drain = 0.0;
+let next_step = 0;
 let isHydro = true;
 let c_i, c_j;
 async function compute(){
-    for(let i=0; i<1; ++i){
+    for(let i=0; i<20; ++i){
         let nextRenderIndex = currentRenderIndex == 0 ? 1 : 0;
 
         let rt1 = renderTargets[currentRenderIndex];
@@ -1351,8 +1397,10 @@ async function compute(){
         hydrologyFilter.uniforms.heightmap.value = rt2.texture;
         gpuCompute.doRenderTarget( hydrologyFilter, rt1 );
         
-        if(false){
+        if(true && simTime == next_drain){
             drainageStep(rt1);
+            next_drain += dt1d;
+            console.log(next_drain, dt1d, dt);
         }
 
         qFilter.uniforms.dt.value = dt;
@@ -1364,7 +1412,12 @@ async function compute(){
         hFilter.uniforms.drainmap.value = drainmap;
         gpuCompute.doRenderTarget( hFilter, rt1 );
         //_prefix = "updateH"
-        checkTexture(rt1);
+        solve_dt(rt1);
+        next_surf+=dt;
+
+        next_step = Math.min(next_surf, next_drain);
+        next_surf = next_step;
+        dt = next_step - simTime;
 
         //myFilter1.uniforms.drainmap.value = drainmap;
         //myFilter1.uniforms.heightmap.value = rt2.texture;
