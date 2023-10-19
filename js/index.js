@@ -76,7 +76,7 @@ let dtmax = 0.25;
 let dt = 0.25; //step dt
 let simTimeView = document.getElementById('simTimeView');
 let rain_per_sec = 3600;
-let rain_val = 10; //시간당 강수량 50mm/h; 
+let rain_val = 10000; //시간당 강수량 50mm/h; 
 
 async function parseTif(src, callback){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -903,7 +903,6 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     heightmap = gpuCompute.createTexture();
     originmap = gpuCompute.createTexture();
     buildingmap = gpuCompute.createTexture();
-    drainmap = gpuCompute.createTexture();
     infilmap = gpuCompute.createTexture();
 
     fillTexture( heightmap, originmap, buildingmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data); 
@@ -960,7 +959,6 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
 
     
     terrainMaterial.uniforms[ 'originmap' ].value = originmap;
-    terrainMaterial.uniforms[ 'drainmap' ].value = drainmap;
     water.material.uniforms[ 'unit' ].value = 1.0/BOUNDS.toFixed(1);
     water.material.uniforms[ 'originmap' ].value = originmap;
     water.material.uniforms[ 'buildingmap' ].value = buildingmap;
@@ -1191,13 +1189,17 @@ function drainageStep(rt){
 
 
         //let startTime = performance.now(); // 측정 시작
+        //dt1d_sum+=10;
         
+        drainmap = gpuCompute.createTexture();
         const drainmap_pixcels = drainmap.image.data;
         for(let i=0; i<swmm.nodes.length; ++i){
             let node = swmm.nodes[i];
+            let Name = node.Name;
             if(!node['containStudy']){
                 continue;
             }
+
             //swmm_setNodeFullDepth(i, 2.0/FOOT);
             //let head = swmm_getNodeHead(i);
             //let crestElev = swmm_getNodeCrestElev(i);
@@ -1205,21 +1207,42 @@ function drainageStep(rt){
 
             //int index, double h, double z, double cell_surf
             
-            let pos = xyPos(node.index_x, node.index_y);
+            let pos = xyPos(node.index_x-1, node.index_y);
             //let vx = readPixels[pos];
             //let vy = readPixels[pos+1];
             let h = readPixels[pos+2];
             let z = readPixels[pos+3];
 
-            let qdrain = apply_linkage_flow(i, h, z, node.Invert, beX*beY, dt1d);
-            let Name = node.Name;
+            if(Name == "J_145"){
+                let fullDepth = node.Dmax;
+                let depth = swmm_getNodeDepth(i) * FOOT;
+                let percent = depth / fullDepth * 100;
+                console.log('pre', Name, depth, fullDepth, percent);
+            }
 
+
+            let qdrain = apply_linkage_flow(i, h, z, node.Invert, beX*beY, dt1d);
+            if(qdrain > 0 && Name.startsWith('J')){
+                console.log(Name, qdrain);
+                debugger
+            }
+            // if(Name == 'J_80'){
+            //     console.log(Name, qdrain);
+            // }
             drainmap_pixcels[pos] = qdrain;
+            //drainmap_pixcels[pos+1] = 77.;//qdrain;
+            //drainmap_pixcels[pos+2] = dt1d_sum;//qdrain;
+            //drainmap_pixcels[pos+3] = 77.;//qdrain;
             
 
-            //if(Name == 'O_7'){
-            //    let rtnId = swmm_getNodeID(i);
-            //}
+            
+            if(Name == "J_145"){
+                let fullDepth = node.Dmax;
+                let depth = swmm_getNodeDepth(i) * FOOT;
+                let percent = depth / fullDepth * 100;
+                console.log('post', Name, depth, fullDepth, percent, qdrain);
+            }
+            
             //const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
     
             //let inflow = Module.getValue(node, 'double');
@@ -1337,6 +1360,13 @@ async function solve_dt(rt){
     const pixels = new Float32Array( readWaterLevelImage.buffer );
     //console.log(pixels[0], pixels[1], pixels[2], pixels[3]);
     
+    // let dbgPos470 = xyPos(183,197);
+    // let dbgPos470_t = xyPos(183,198);
+    // let dbgPos470_b = xyPos(183,196);
+    // let dbgPos470_l = xyPos(182,197);
+    let dbgPos470_r = xyPos(67,114);
+    console.log('h',pixels[dbgPos470_r+2]);
+
     let maxh = Number.MIN_VALUE;
 
     let maxi = -1;
@@ -1400,7 +1430,7 @@ async function compute(){
         if(true && simTime == next_drain){
             drainageStep(rt1);
             next_drain += dt1d;
-            console.log(next_drain, dt1d, dt);
+            //console.log(next_drain, dt1d, dt);
         }
 
         qFilter.uniforms.dt.value = dt;

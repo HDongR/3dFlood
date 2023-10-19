@@ -751,17 +751,17 @@ int DLLEXPORT   swmm_getNodeHeads(double* heads)
 
 EMSCRIPTEN_KEEPALIVE
 double DLLEXPORT   swmm_getNodeHead(int index){
-    return (Node[index].invertElev + Node[index].newDepth) * FOOT;
+    return (Node[index].invertElev + Node[index].newDepth);
 }
 
 EMSCRIPTEN_KEEPALIVE
 double DLLEXPORT   swmm_getNodeCrestElev(int index){
-    return (Node[index].invertElev + Node[index].fullDepth) * FOOT;
+    return (Node[index].invertElev + Node[index].fullDepth);
 }
 
 EMSCRIPTEN_KEEPALIVE
 double DLLEXPORT   swmm_getNodeDepth(int index){
-    return Node[index].newDepth * FOOT;
+    return Node[index].newDepth;
 }
 
 EMSCRIPTEN_KEEPALIVE

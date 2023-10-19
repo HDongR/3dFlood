@@ -83,6 +83,9 @@ function get_linkage_flow(wse, node_head, weir_width, crest_elev, linkage_type, 
         unsigned_q = (SUBMERGED_WEIR_COEFF * weir_width * upstream_depth * Math.sqrt(2. * g * upstream_depth));
     }
     //# assign flow sign
+    //if(node_head - wse>0){
+    //    debugger
+    //}
     return copySign(unsigned_q, node_head - wse);                            
 }
 
@@ -99,13 +102,13 @@ function get_overflow_area(node_idx, node_depth){
 }
 
 export function apply_linkage_flow(index, h, z, node_invert_elev, cell_surf, dt1d){
-    let node_crest_elev = swmm_getNodeCrestElev(index);
+    let node_crest_elev = swmm_getNodeCrestElev(index) * FOOT;
     let wse = z + h;
     let crest_elev = 0; 
     if(node_crest_elev != z){
         let full_depth = z - node_invert_elev;
         //# Set value in feet. This func updates the fullVolume too
-        swmm_setNodeFullDepth(index, full_depth);
+        swmm_setNodeFullDepth(index, full_depth / FOOT);
         crest_elev = z;
     }
     else{
@@ -113,12 +116,12 @@ export function apply_linkage_flow(index, h, z, node_invert_elev, cell_surf, dt1
     }
 
     //## linkage type ##
-    let nodeDepth = swmm_getNodeDepth(index);
+    let nodeDepth = swmm_getNodeDepth(index) * FOOT;
     let overflow_area = get_overflow_area(index, nodeDepth);
     //# weir width is the circumference (node considered circular)
     let weir_width = Math.PI * 2.0 * Math.sqrt(overflow_area / Math.PI);
     //# determine linkage type
-    let head = (node_invert_elev + nodeDepth);
+    let head = swmm_getNodeHead(index) * FOOT;
     let linkage_type = get_linkage_type(wse, crest_elev, head, weir_width, overflow_area);
 
     //## linkage flow ##
