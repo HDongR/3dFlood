@@ -84,7 +84,7 @@ void main() {
 	}else{
 		gl_FragColor.xyz = gl_FragColor.rgb;
 	}
-	
+	gl_FragColor.a = 1.0;
 
 }
 `;

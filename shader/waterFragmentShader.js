@@ -1,13 +1,17 @@
 export default `
 #define PHONG
 
+uniform sampler2D heightmap;
+uniform sampler2D buildingmap;
+uniform bool setilView;
+uniform sampler2D setilmap; 
+
 uniform vec3 diffuse;
 uniform vec3 emissive;
 uniform vec3 specular;
 uniform float shininess;
 uniform float opacity;
- 
-uniform sampler2D heightmap;
+
 varying vec2 vUv;
 
 #include <common>
@@ -40,7 +44,7 @@ void main() {
 
 	#include <clipping_planes_fragment>
 
-	vec4 diffuseColor = vec4( diffuse, opacity );
+	vec4 diffuseColor = vec4( diffuse, 0.5 );
 	ReflectedLight reflectedLight = ReflectedLight( vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ) );
 	vec3 totalEmissiveRadiance = emissive;
 
@@ -74,15 +78,34 @@ void main() {
 	#include <premultiplied_alpha_fragment>
 	#include <dithering_fragment>
 	
-	vec4 c = texture2D(heightmap, vUv);
-     
-    float alpha = 1.0;
-    if (c.z < 0.0) {
-        alpha = 0.0;
-    }
- 
-	gl_FragColor = vec4(gl_FragColor.rgb, alpha);
+	vec4 height = texture2D(heightmap, vUv);
+    float h = height.z;
 	
+	float x = 0.;
+	float y = 1.;
+	float value = h;
+
+	if(h <= 0.01){
+		discard;
+	}
+
+	float alpha = clamp((value - x) / (y - x), 0., 1.);
+
+	float radius = 0.5;
+	float x1 = 0.1;
+	float x2 = 0.1;
+	float P = radius * sqrt(1.0f - x1); // this will scale x1 into P with range <0,radius> but change the distribution to uniform number of points inside disc
+    float theta = x2 * 2.0 * PI; // this will scale x2 to theta in range <0,6.28>
+    vec2 o2 = vec2(P * cos(theta), P * sin(theta));
+	alpha = o2.x;
+
+	if(setilView){
+		vec3 mx = vec3(texture2D( setilmap, vUv));
+		gl_FragColor.xyz = mix(mx, gl_FragColor.rgb, alpha);
+	}else{
+		gl_FragColor.xyz = vec3(1.0, 0., 0.);
+	}
+	gl_FragColor.a = 1.0;
 	
 
 }
