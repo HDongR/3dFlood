@@ -3886,7 +3886,7 @@ var _swmm_end = Module['_swmm_end'] = () => (_swmm_end = Module['_swmm_end'] = w
 var _swmm_close = Module['_swmm_close'] = () => (_swmm_close = Module['_swmm_close'] = wasmExports['swmm_close'])();
 var _routing_getRoutingStep = Module['_routing_getRoutingStep'] = (a0, a1) => (_routing_getRoutingStep = Module['_routing_getRoutingStep'] = wasmExports['routing_getRoutingStep'])(a0, a1);
 var _swmm_getNodeID = Module['_swmm_getNodeID'] = (a0) => (_swmm_getNodeID = Module['_swmm_getNodeID'] = wasmExports['swmm_getNodeID'])(a0);
-var _swmm_getLinkID = Module['_swmm_getLinkID'] = (a0, a1) => (_swmm_getLinkID = Module['_swmm_getLinkID'] = wasmExports['swmm_getLinkID'])(a0, a1);
+var _swmm_getLinkID = Module['_swmm_getLinkID'] = (a0) => (_swmm_getLinkID = Module['_swmm_getLinkID'] = wasmExports['swmm_getLinkID'])(a0);
 var _swmm_getNodeInflows = Module['_swmm_getNodeInflows'] = (a0) => (_swmm_getNodeInflows = Module['_swmm_getNodeInflows'] = wasmExports['swmm_getNodeInflows'])(a0);
 var _swmm_getNodeOutflows = Module['_swmm_getNodeOutflows'] = (a0) => (_swmm_getNodeOutflows = Module['_swmm_getNodeOutflows'] = wasmExports['swmm_getNodeOutflows'])(a0);
 var _swmm_getNodeHeads = Module['_swmm_getNodeHeads'] = (a0) => (_swmm_getNodeHeads = Module['_swmm_getNodeHeads'] = wasmExports['swmm_getNodeHeads'])(a0);
@@ -3907,10 +3907,13 @@ var _swmm_addNodeInflow = Module['_swmm_addNodeInflow'] = (a0, a1) => (_swmm_add
 var _swmm_getLinkData = Module['_swmm_getLinkData'] = (a0, a1) => (_swmm_getLinkData = Module['_swmm_getLinkData'] = wasmExports['swmm_getLinkData'])(a0, a1);
 var _swmm_setNodeFullDepth = Module['_swmm_setNodeFullDepth'] = (a0, a1) => (_swmm_setNodeFullDepth = Module['_swmm_setNodeFullDepth'] = wasmExports['swmm_setNodeFullDepth'])(a0, a1);
 var _swmm_setAllowPonding = Module['_swmm_setAllowPonding'] = (a0) => (_swmm_setAllowPonding = Module['_swmm_setAllowPonding'] = wasmExports['swmm_setAllowPonding'])(a0);
+var _swmm_getAllowPonding = Module['_swmm_getAllowPonding'] = () => (_swmm_getAllowPonding = Module['_swmm_getAllowPonding'] = wasmExports['swmm_getAllowPonding'])();
+var _swmm_getMinSurf = Module['_swmm_getMinSurf'] = () => (_swmm_getMinSurf = Module['_swmm_getMinSurf'] = wasmExports['swmm_getMinSurf'])();
 var _swmm_setNodePondedArea = Module['_swmm_setNodePondedArea'] = (a0, a1) => (_swmm_setNodePondedArea = Module['_swmm_setNodePondedArea'] = wasmExports['swmm_setNodePondedArea'])(a0, a1);
 var _get_linkage_type = Module['_get_linkage_type'] = (a0, a1, a2, a3, a4) => (_get_linkage_type = Module['_get_linkage_type'] = wasmExports['get_linkage_type'])(a0, a1, a2, a3, a4);
 var _get_linkage_flow = Module['_get_linkage_flow'] = (a0, a1, a2, a3, a4, a5) => (_get_linkage_flow = Module['_get_linkage_flow'] = wasmExports['get_linkage_flow'])(a0, a1, a2, a3, a4, a5);
 var _node_getSurfArea = Module['_node_getSurfArea'] = (a0, a1) => (_node_getSurfArea = Module['_node_getSurfArea'] = wasmExports['node_getSurfArea'])(a0, a1);
+var _swmm_getLinkFlow = Module['_swmm_getLinkFlow'] = (a0) => (_swmm_getLinkFlow = Module['_swmm_getLinkFlow'] = wasmExports['swmm_getLinkFlow'])(a0);
 var _apply_linkage_flow = Module['_apply_linkage_flow'] = (a0, a1, a2, a3) => (_apply_linkage_flow = Module['_apply_linkage_flow'] = wasmExports['apply_linkage_flow'])(a0, a1, a2, a3);
 var _free = (a0) => (_free = wasmExports['free'])(a0);
 var _main = Module['_main'] = (a0, a1) => (_main = Module['_main'] = wasmExports['__main_argc_argv'])(a0, a1);

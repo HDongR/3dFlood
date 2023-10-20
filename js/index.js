@@ -26,7 +26,7 @@ import { Sky } from './water/Sky.js';
 
 import { parseInp } from './utils/inp.js';
 import { apply_linkage_flow } from './swmm.js';
-import { WGS84ToMercator, MercatorToWGS84, intArrayToString } from './utils/utils.js';
+import { lerp, inverseLerp, WGS84ToMercator, MercatorToWGS84, intArrayToString } from './utils/utils.js';
 
 // Texture width for simulation
 const WIDTH = 128;
@@ -76,7 +76,8 @@ let dtmax = 0.25;
 let dt = 0.25; //step dt
 let simTimeView = document.getElementById('simTimeView');
 let rain_per_sec = 3600;
-let rain_val = 10000; //시간당 강수량 50mm/h; 
+let rain_val = 40; //시간당 강수량 50mm/h; 
+let MinSurfArea = 12.566;
 
 async function parseTif(src, callback){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -115,7 +116,6 @@ async function parseGeoTiff(){
     const surf_infilmax_Data = await parseTif('/asset/tmp_1_surface_infilmax_result_1.tiff');
     const surf_infilmin_Data = await parseTif('/asset/tmp_1_surface_infilmin_result_1.tiff');
     
-    await loadSwmm('/asset/swmm/drain_00387.inp');
     await init(tifData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data);
     animate();
 }
@@ -133,17 +133,180 @@ async function loadSwmm(inpFile){
 
     let inpRes = await fetch(inpFile);
     let inpText = await inpRes.text();
-    FS.createDataFile('/tmp/', 'input.inp', inpText, true, true);
+    let inp = parseInp(inpText);
 
-    await processModel();
     
-    async function processModel(){
+    await preProcessModel();
+    let p_inpText = await autoCollect(inp);
+    await initSwmm(inpText);
+    
+    async function autoCollect(p_inp){
+        function collectJunction(junction, geom1){
+            const heightmap_pixels = heightmap.image.data;
+            
+            let elevation = Number(junction.Invert);
+            let b_elev = elevation;
+            let node_pos = xyPos(junction.index_x, junction.index_y);
+            let d_elev = heightmap_pixels[node_pos+3];
+            
+            if(elevation > d_elev
+                || elevation == 0.0
+                || b_elev < elevation){
+                if(d_elev-1.0 > b_elev){
+
+                }else{
+                    b_elev = d_elev-1;
+                }
+            }else{
+                b_elev = elevation;
+            }
+
+            let maxDepth = d_elev - b_elev;
+            if(geom1 > maxDepth){
+                maxDepth = geom1;
+                b_elev = d_elev - maxDepth;
+            }
+
+            //console.log('z:'+d_elev, 'invert:'+junction.Invert, 'Depth:'+junction.Dmax, 'elevation:'+b_elev, 'maxdepth:'+maxDepth);
+            //console.log('z:'+d_elev, 'rz:'+(b_elev+maxDepth));
+            junction.Dmax = maxDepth;
+            junction.Invert = b_elev;
+        }
+
+        for(let i=0; i<swmm.links.length; ++i){
+            let conduit = swmm.links[i];
+
+            let prevJunction = conduit.fromNode;
+            let nextJunction = conduit.toNode;
+       
+            if(!prevJunction || !nextJunction){
+               continue; 
+            }
+            let c_geom1 = Number(conduit.Geom1);
+            
+            collectJunction(prevJunction, c_geom1);
+            collectJunction(nextJunction, c_geom1);
+        }
+
+        function outputInp(p_inp){
+            //title
+            let resultInp=`[TITLE]\n`;
+            let title = p_inp.TITLE[0].TitleNotes;
+            resultInp+=`${title}`;
+            resultInp+=`\n\n`;
+
+            //options
+            resultInp+=`[OPTIONS]\n`;
+            let options = Object.keys(p_inp.OPTIONS);
+            for(let i=0; i<options.length; ++i){
+                let key = options[i];
+                //console.log(key, p_inp.OPTIONS[key].Value);
+                resultInp+=`${key}          ${p_inp.OPTIONS[key].Value}\n`;
+            }
+            resultInp+=`\n\n`;
+
+            //junctions
+            resultInp+=`[JUNCTIONS]\n`;
+            for(let i=0; i<swmm.nodes.length; ++i){
+                let node = swmm.nodes[i];
+                if(node.Name.startsWith('J')){
+                    resultInp+=`${node.Name}          ${node.Invert}          ${node.Dmax}          ${node.Dinit}          ${node.Dsurch}          ${node.Aponded}\n`;
+                }
+            }
+            resultInp+=`\n\n`;
+
+            //outfalls
+            resultInp+=`[OUTFALLS]\n`;
+            for(let i=0; i<swmm.nodes.length; ++i){
+                let node = swmm.nodes[i];
+                if(node.Name.startsWith('O')){
+                    resultInp+=`${node.Name}          ${node.Invert}          ${node.Type}          ${node.StageData}          ${node.Gated}\n`;
+                }
+            }
+            resultInp+=`\n\n`;
+
+            //conduits
+            resultInp+=`[CONDUITS]\n`;
+            for(let i=0; i<swmm.links.length; ++i){
+                let conduit = swmm.links[i];
+    
+                let prevJunction = conduit.fromNode;
+                let nextJunction = conduit.toNode;
+           
+                if(!prevJunction || !nextJunction){
+                   continue; 
+                }
+
+                resultInp+=`${conduit.Name}          ${prevJunction.Name}          ${nextJunction.Name}          ${conduit.Length}          ${conduit.Roughness}          ${conduit.InOffset}          ${conduit.OutOffset}          ${conduit.InitFlow}          ${conduit.MaxFlow}\n`;
+            }
+            resultInp+=`\n\n`;
+
+            //xsections
+            resultInp+=`[XSECTIONS]\n`;
+            for(let i=0; i<swmm.links.length; ++i){
+                let conduit = swmm.links[i];
+    
+                let prevJunction = conduit.fromNode;
+                let nextJunction = conduit.toNode;
+           
+                if(!prevJunction || !nextJunction){
+                   continue; 
+                }
+
+                resultInp+=`${conduit.Name}          ${conduit.Shape}          ${conduit.Geom1}          ${conduit.Geom2}          ${conduit.Geom3}          ${conduit.Geom4}          ${conduit.Barrels}          \n`;
+            }
+            resultInp+=`\n\n`;
+
+            //losses
+            resultInp+=`[LOSSES]\n`;
+            for(let i=0; i<swmm.links.length; ++i){
+                let conduit = swmm.links[i];
+
+                let prevJunction = conduit.fromNode;
+                let nextJunction = conduit.toNode;
+                if(!prevJunction || !nextJunction){
+                   continue; 
+                }
+
+                resultInp+=`${conduit.Name}          0          0          0          NO          0          \n`;
+            }
+            resultInp+=`\n\n`;
+
+            //coordinates
+            resultInp+=`[COORDINATES]\n`;
+            for(let i=0; i<swmm.nodes.length; ++i){
+                let node = swmm.nodes[i]; 
+                resultInp+=`${node.Name}          ${node.x}          ${node.y}\n`;
+            }
+            resultInp+=`\n\n`;
+
+            return resultInp;
+        }
+
+        return outputInp(p_inp);
+    }
+    
+    async function initSwmm(p_inpText){
+        FS.createDataFile('/tmp/', 'input.inp', p_inpText, true, true);
         swmm_open("/tmp/input.inp", "/tmp/Example1x.rpt", "/tmp/out.out");
         swmm_start(1);
         swmm_setAllowPonding(1);
+        let ponding = swmm_getAllowPonding();
 
-        let inp = parseInp(inpText);
+        await nodePonding();
+    }
 
+    async function nodePonding(){
+        for(let i=0; i<swmm.nodes.length; ++i){
+            let node = swmm.nodes[i];
+            if(!node['containStudy']){
+                continue;
+            }
+            swmm_setNodePondedArea(i, MinSurfArea);
+        }
+    }
+
+    async function preProcessModel(){
         //junction 전처리
         let junctionkeys = Object.keys(inp.JUNCTIONS);
         for(let i=0; i<junctionkeys.length; ++i){
@@ -161,14 +324,14 @@ async function loadSwmm(inpFile){
                 let subX = centerXY[0] - junction.x;
                 let subY = centerXY[1] - junction.y;
 
-                let bX = Math.floor(subX / beX);
-                let bY = Math.floor(subY / beY);
+                let bX = subX / beX;
+                let bY = subY / beY;
                 
                 let index_x = bX > 0 ? bX - BOUNDS_HALF : BOUNDS_HALF - bX;
                 let index_y = bY > 0 ? bY - BOUNDS_HALF : BOUNDS_HALF - bY;
                 index_x = Math.abs(index_x);
                 index_y = Math.abs(index_y);
-                if(index_x >= BOUNDS || index_y >= BOUNDS){
+                if(Math.round(index_x) >= BOUNDS || Math.round(index_y) >= BOUNDS){
                     junction['containStudy'] = false;
                 }
                 //console.log(jkey, index_x, index_y);
@@ -176,12 +339,12 @@ async function loadSwmm(inpFile){
                 let world_x = index_x - BOUNDS_HALF;
                 let world_z = BOUNDS_HALF - index_y;
 
-                junction['index_x'] = index_x;
-                junction['index_y'] = index_y;
+                junction['raw_index_x'] = index_x;
+                junction['raw_index_y'] = index_y;
+                junction['index_x'] = Math.round(index_x);
+                junction['index_y'] = Math.round(index_y);
                 junction['world_x'] = world_x;
                 junction['world_z'] = world_z;
-
-
             }else{
                 junction['containStudy'] = false;
             }
@@ -204,8 +367,8 @@ async function loadSwmm(inpFile){
                 let subX = centerXY[0] - outfall.x;
                 let subY = centerXY[1] - outfall.y;
 
-                let bX = Math.floor(subX / beX);
-                let bY = Math.floor(subY / beY);
+                let bX = subX / beX;
+                let bY = subY / beY;
                 
                 let index_x = bX > 0 ? bX - BOUNDS_HALF : BOUNDS_HALF - bX;
                 let index_y = bY > 0 ? bY - BOUNDS_HALF : BOUNDS_HALF - bY;
@@ -220,8 +383,8 @@ async function loadSwmm(inpFile){
                 let world_x = index_x - BOUNDS_HALF;
                 let world_z = BOUNDS_HALF - index_y;
 
-                outfall['index_x'] = index_x;
-                outfall['index_y'] = index_y;
+                outfall['index_x'] = Math.round(index_x);
+                outfall['index_y'] = Math.round(index_y);
                 outfall['world_x'] = world_x;
                 outfall['world_z'] = world_z;
 
@@ -694,6 +857,8 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
 
     await initWater();
     await setCompute(terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data);
+    
+    await loadSwmm('/asset/swmm/drain_00387.inp');
     await addDrainNetworkMesh();
 }
 
@@ -886,6 +1051,7 @@ let heightmap;
 let buildingmap;
 let originmap;
 let drainmap;
+let outfallmap;
 let infilmap;
 
 async function setCompute(terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data){
@@ -918,6 +1084,7 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
         'buildingmap': { value: buildingmap },
         'infilmap': { value: infilmap },
         'drainmap': { value: null },
+        'outfallmap': { value: null },
         'infiltrationRate': { value: infiltrationRate },
         'simTime': { value: 0.0 },
         'rain_per_sec': { value: rain_per_sec },
@@ -1024,10 +1191,28 @@ function fillTexture( heightmap, originmap, buildingmap, infilmap, terrainData, 
                 //debugger
             }
             
+            let terrain = terrainData[cnt];
+            // for(let i=0; i<swmm.nodes.length; ++i){
+            //     let node = swmm.nodes[i];
+            //     let Name = node.Name;
+            //     if(!node['containStudy']){
+            //         continue;
+            //     }
+            //     let node_pos = xyPos(node.index_x, node.index_y);
+            //     //if(pos == node_pos && Name == 'J_143'){
+            //     //    console.log('dbg');
+            //     //}
+            //     if(pos == node_pos){
+            //         collectHeight = node.Invert + node.Dmax;
+            //         break;
+            //     }
+                
+            // }
+
             heightmap_pixels[ xPox ] = 0;
             heightmap_pixels[ yPos ] = 0;
             heightmap_pixels[ zPos ] = streamHeight;
-            heightmap_pixels[ wPos ] = terrainData[cnt]+buildingHeight;
+            heightmap_pixels[ wPos ] = terrain+buildingHeight;
 
             buildingmap_pixcels[ xPox ] = buildingHeight;
             buildingmap_pixcels[ yPos ] = 0;
@@ -1037,7 +1222,7 @@ function fillTexture( heightmap, originmap, buildingmap, infilmap, terrainData, 
             originmap_pixcels[ xPox ] = 0;
             originmap_pixcels[ yPos ] = 0;
             originmap_pixcels[ zPos ] = 0;
-            originmap_pixcels[ wPos ] = terrainData[cnt];
+            originmap_pixcels[ wPos ] = terrain;
 
             let roughness = surf_rough_Data[cnt];
             if(isNaN( roughness ) || roughness == 0){
@@ -1143,7 +1328,6 @@ let elapsed_time = 0.0;
 let input_ptr = _malloc(8);
 Module.setValue(input_ptr, elapsed_time, "double");
 let dt1d = 0;
-let dt1d_sum = 0;
 function drainageStep(rt){
     let swmm_solve_dt = ()=>{
         let olds = swmm_getNewRoutingTime() / 1000.;
@@ -1168,8 +1352,6 @@ function drainageStep(rt){
     }
 
     let apply_linkage = ()=>{
-
- 
         renderer.readRenderTargetPixels( rt , 0, 0, BOUNDS, BOUNDS, readWaterLevelImage );
         const readPixels = new Float32Array( readWaterLevelImage.buffer );
 
@@ -1193,10 +1375,12 @@ function drainageStep(rt){
         
         drainmap = gpuCompute.createTexture();
         const drainmap_pixcels = drainmap.image.data;
+
         for(let i=0; i<swmm.nodes.length; ++i){
             let node = swmm.nodes[i];
             let Name = node.Name;
-            if(!node['containStudy']){
+            
+            if(!node['containStudy'] || Name.startsWith('O')){
                 continue;
             }
 
@@ -1207,25 +1391,75 @@ function drainageStep(rt){
 
             //int index, double h, double z, double cell_surf
             
-            let pos = xyPos(node.index_x-1, node.index_y);
+            let pos = xyPos(node.index_x, node.index_y);
+            // let pos_left = xyPos(node.index_x-1, node.index_y);
+            // let pos_right = xyPos(node.index_x+1, node.index_y);
+            // let pos_top = xyPos(node.index_x, node.index_y+1);
+            // let pos_bottom = xyPos(node.index_x, node.index_y-1);
             //let vx = readPixels[pos];
             //let vy = readPixels[pos+1];
             let h = readPixels[pos+2];
             let z = readPixels[pos+3];
+            // let z_left = readPixels[pos_left+3];
+            // let z_right = readPixels[pos_right+3];
+            // let z_top = readPixels[pos_top+3];
+            // let z_bottom = readPixels[pos_bottom+3];
 
-            if(Name == "J_145"){
-                let fullDepth = node.Dmax;
-                let depth = swmm_getNodeDepth(i) * FOOT;
-                let percent = depth / fullDepth * 100;
-                console.log('pre', Name, depth, fullDepth, percent);
-            }
+            // if(Name == "J_219"){
+            //     let fullDepth = node.Dmax;
+            //     let depth = swmm_getNodeDepth(i) * FOOT;
+            //     let percent = depth / fullDepth * 100;
+            //     console.log('pre', Name, depth, fullDepth, percent);
+            // }
 
+            //if(Name == 'J_143'){
+            //let fixHeight = node.Invert+node.Dmax;
 
+            //console.log(Name, fixHeight, z, z-fixHeight)
+            //}
+            // let index_x = node['index_x'];
+            // let index_y = node['index_y'];
+            // let raw_index_x = node['raw_index_x'];
+            // let raw_index_y = node['raw_index_y'];
+
+            // let difX = index_x - raw_index_x;
+            // let difY = index_y - raw_index_y;
+
+            // let adifX = Math.abs(difX);
+            // let adifY = Math.abs(difY);
+
+            // let startX_Z = z;
+            // let endX_Z = z;
+            // if(difX > 0){
+            //     startX_Z = z_left;
+            //     endX_Z = z;
+            // }else if(difX < 0){
+            //     startX_Z = z;
+            //     endX_Z = z_right;
+            // }
+            // let rx_z = lerp(startX_Z, endX_Z, adifX);
+
+            // let startY_Z = z;
+            // let endY_Z = z;
+            // if(difY > 0){
+            //     startY_Z = z_bottom;
+            //     endY_Z = z;
+            // }else if(difY < 0){
+            //     startY_Z = z;
+            //     endY_Z = z_top;
+            // }
+            // let ry_z = lerp(startY_Z, endY_Z, adifY);
+
+            // let rz = (rx_z + ry_z)*0.5;
+
+            // console.log(z, rz, node.Invert, node.Dmax);
+
+            //let qdrain = apply_linkage_flow(i, h, z, node.Invert, beX*beY, dt1d);
             let qdrain = apply_linkage_flow(i, h, z, node.Invert, beX*beY, dt1d);
-            if(qdrain > 0 && Name.startsWith('J')){
-                console.log(Name, qdrain);
-                debugger
-            }
+            //if(qdrain > 0 && Name.startsWith('J')){
+                //console.log(Name, qdrain);
+                //debugger
+            //}
             // if(Name == 'J_80'){
             //     console.log(Name, qdrain);
             // }
@@ -1236,12 +1470,12 @@ function drainageStep(rt){
             
 
             
-            if(Name == "J_145"){
-                let fullDepth = node.Dmax;
-                let depth = swmm_getNodeDepth(i) * FOOT;
-                let percent = depth / fullDepth * 100;
-                console.log('post', Name, depth, fullDepth, percent, qdrain);
-            }
+            // if(Name == "J_219"){
+            //     let fullDepth = node.Dmax;
+            //     let depth = swmm_getNodeDepth(i) * FOOT;
+            //     let percent = depth / fullDepth * 100;
+            //     console.log('post', Name, depth, fullDepth, percent, qdrain);
+            // }
             
             //const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
     
@@ -1279,10 +1513,38 @@ function drainageStep(rt){
         
     }
 
+    let outfall = ()=>{
+        outfallmap = gpuCompute.createTexture();
+        const outfallmap_pixcels = drainmap.image.data;
+
+        for(let i=0; i<swmm.links.length; ++i){
+            let conduit = swmm.links[i];
+            let Name = conduit.Name;
+            let prevJunction = conduit.fromNode;
+            let nextJunction = conduit.toNode;
+       
+            if(!prevJunction || !nextJunction){
+               continue; 
+            }
+            
+            if(nextJunction.Name.startsWith('O')){
+                //let cName = swmm_getLinkID(i);
+                let cFlow = swmm_getLinkFlow(i);
+
+                let pos = xyPos(nextJunction.index_x, nextJunction.index_y);
+                outfallmap_pixcels[pos] = cFlow*FOOT3;
+
+                //console.log(Name, nextJunction.Name, cFlow);
+            }
+            
+            
+        }
+    }
+
     swmm_solve_dt();
     step();
     apply_linkage();
-
+    outfall();
 
 }
 
@@ -1364,8 +1626,8 @@ async function solve_dt(rt){
     // let dbgPos470_t = xyPos(183,198);
     // let dbgPos470_b = xyPos(183,196);
     // let dbgPos470_l = xyPos(182,197);
-    let dbgPos470_r = xyPos(67,114);
-    console.log('h',pixels[dbgPos470_r+2]);
+    //let dbgPos470_r = xyPos(95,305);
+    //console.log('h',pixels[dbgPos470_r+2]);
 
     let maxh = Number.MIN_VALUE;
 
@@ -1440,6 +1702,7 @@ async function compute(){
         hFilter.uniforms.dt.value = dt;
         hFilter.uniforms.heightmap.value = rt2.texture;
         hFilter.uniforms.drainmap.value = drainmap;
+        hFilter.uniforms.outfallmap.value = outfallmap;
         gpuCompute.doRenderTarget( hFilter, rt1 );
         //_prefix = "updateH"
         solve_dt(rt1);

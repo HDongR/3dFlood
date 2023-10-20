@@ -3,6 +3,7 @@ uniform float time, dt, unit;
 uniform sampler2D heightmap;
 uniform sampler2D buildingmap;
 uniform sampler2D drainmap;
+uniform sampler2D outfallmap;
 uniform float dx, dy;
 
 //factor
@@ -44,6 +45,7 @@ void main(void) {
     vec4 _posLeftTop = texture2D(heightmap, posLeftTop);
      
     vec4 drain = texture2D(drainmap, uv);
+    vec4 outfall = texture2D(outfallmap, uv);
     float qe = _pos.x;
     float qw = _posLeft.x;
     float qs = _pos.y;
@@ -52,7 +54,7 @@ void main(void) {
     
     float q_sum = (qw - qe) / dx + (qn - qs) / dy;
     //float h_new = h + q_sum*dt;
-    float h_new = h + (drain.x + q_sum) * dt;
+    float h_new = h + (drain.x + q_sum + outfall.x) * dt;
     if(h_new < 0.){
         h_new = 0.;
     }

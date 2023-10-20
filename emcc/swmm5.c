@@ -690,19 +690,20 @@ char* DLLEXPORT   swmm_getNodeID(int index)
 	return NULL;
 }
 EMSCRIPTEN_KEEPALIVE
-int DLLEXPORT   swmm_getLinkID(int index, char* id)
+char* DLLEXPORT   swmm_getLinkID(int index)
 {
 	if ( IsOpenFlag )
 	{
 		if ( index >= Nobjects[LINK] )
         {
-			return ERR_NUMBER;
+			return NULL;
         }
-		sstrncpy(id,Link[index].ID,MAXLINE);
-		return ERR_NONE;
+        
+		return Link[index].ID;
 	}
-	return ERR_NOT_OPEN;
+	return NULL;
 }
+
 EMSCRIPTEN_KEEPALIVE
 int DLLEXPORT   swmm_getNodeInflows(double* flows)
 {
@@ -893,6 +894,16 @@ int DLLEXPORT swmm_setAllowPonding(int ap)
     return 0;
 }
 EMSCRIPTEN_KEEPALIVE
+int DLLEXPORT swmm_getAllowPonding()
+{
+    return AllowPonding;
+}
+EMSCRIPTEN_KEEPALIVE
+double DLLEXPORT   swmm_getMinSurf()
+{
+    return MinSurfArea;
+}
+EMSCRIPTEN_KEEPALIVE
 int DLLEXPORT swmm_setNodePondedArea(int index, double area)
 {
 	if ( IsOpenFlag )
@@ -1003,6 +1014,12 @@ double DLLEXPORT solve_dt(){
         _dt = routing_getRoutingStep(DW, RouteStep);
     }
     return _dt;
+}
+
+EMSCRIPTEN_KEEPALIVE
+double DLLEXPORT   swmm_getLinkFlow(int index){
+	double flow = Link[index].newFlow * Link[index].direction;
+    return flow;
 }
 
 EMSCRIPTEN_KEEPALIVE
