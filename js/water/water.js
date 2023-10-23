@@ -244,7 +244,7 @@ class Water extends Mesh {
 					
 					gl_FragColor = vec4( outgoingLight, alpha );
 
-					if(data.z > 0.1){
+					if(data.z > discardWaterHeight){
 						
 						vec2 posLeft = vUv + vec2( - unit, 0.0 );
 						vec2 posRight = vUv + vec2( unit, 0.0  );

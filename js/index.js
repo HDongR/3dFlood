@@ -22,11 +22,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 import { Water } from './water/water.js';
+import { Water2 } from './water/water2.js';
 import { Sky } from './water/Sky.js';
 
 import { parseInp } from './utils/inp.js';
 import { apply_linkage_flow } from './swmm.js';
 import { lerp, inverseLerp, WGS84ToMercator, MercatorToWGS84, intArrayToString } from './utils/utils.js';
+
 
 // Texture width for simulation
 const WIDTH = 128;
@@ -49,6 +51,7 @@ const raycaster = new THREE.Raycaster();
 
 let waterMesh;
 let water;
+let water2;
 let terrainMesh;
 let meshRay;
 let gpuCompute;
@@ -58,7 +61,7 @@ let setilView = true;
 let buildingView = true;
 let drainView = true;
 let waterView = true;
-let weatherView = true;
+let weatherView = false;
 let mouseMoved = false;
 
 let global_bbox = [];
@@ -68,7 +71,7 @@ let realHeight = 0;
 let beX = 0;
 let beY = 0;
 
-let initStreamHeight = 0.5; //초기 강의 수위 m
+let initStreamHeight = 6; //초기 강의 수위 m
 let cfl = 0.7;
 let infiltrationRate = 1.0; //침투능 효율
 let simTime = 0; //현재 시뮬레이션 걸린시간
@@ -78,6 +81,10 @@ let simTimeView = document.getElementById('simTimeView');
 let rain_per_sec = 3600;
 let rain_val = 1000; //시간당 강수량 50mm/h; 
 let MinSurfArea = 12.566;
+
+const clock = new THREE.Clock();
+const cycle = 0.15; // a cycle of a flow map phase
+const halfCycle = cycle * 0.5;
 
 async function parseTif(src, callback){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -833,6 +840,8 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
         console.log(check)
 
         terrainMaterial.uniforms[ 'setilView' ].value = check;
+        waterMaterial.uniforms[ 'setilView' ].value = check;
+        water2.material.uniforms[ 'setilView' ].value = check;
     } );
     gui.add(buildingController, 'buildingView' ).name('건물').onChange( (check)=>{
         console.log(check)
@@ -848,6 +857,7 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
         console.log(check)
 
         water.visible = check;
+        waterMesh.visible = check;
     } );
     gui.add(weatherController, 'weatherView' ).name('날씨효과').onChange( (check)=>{
         console.log(check)
@@ -879,9 +889,11 @@ function loadTexture(src){
     });
 }
 
+let waterRenderTarget;
+let setilmapTexture;
 async function initWater() {
     
-    let setilmapTexture = await loadTexture('/asset/output_daejeon_proc2.png'); 
+    setilmapTexture = await loadTexture('/asset/output_daejeon_proc2.png'); 
     const geometry = new THREE.PlaneGeometry( BOUNDS, BOUNDS, BOUNDS-1, BOUNDS-1);
     
     // material: make a THREE.ShaderMaterial clone of THREE.MeshPhongMaterial, with customized vertex shader
@@ -910,37 +922,66 @@ async function initWater() {
 
     const sun = new THREE.Vector3();
 
-    // let waterNormals = await loadTexture( '/js/water/waternormals.jpg' );
-    // waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
+    let waterNormals = await loadTexture( '/js/water/waternormals.jpg' );
+    waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
 
-    // water = new Water(
-    //     geometry,
-    //     {
-    //         textureWidth: BOUNDS,
-    //         textureHeight: BOUNDS,
-    //         waterNormals: waterNormals,
-    //         sunDirection: new THREE.Vector3(),
-    //         sunColor: 0xffffff,
-    //         waterColor: 0x001e0f,
-    //         //waterColor: 0x643200,
-    //         distortionScale: 3.7,
-    //         fog: scene.fog !== undefined
-    //     }
-    // );
+    water = new Water(
+        geometry,
+        {
+            textureWidth: BOUNDS,
+            textureHeight: BOUNDS,
+            waterNormals: waterNormals,
+            sunDirection: new THREE.Vector3(),
+            sunColor: 0xffffff,
+            waterColor: 0x001e0f,
+            //waterColor: 0x643200,
+            distortionScale: 3.7,
+            fog: scene.fog !== undefined
+        }
+    );
 
-    // water.rotation.x = - Math.PI / 2;
-    // water.matrixAutoUpdate = false;
-    // water.updateMatrix();
+    water2 = new Water2(geometry, {
+        textureWidth: BOUNDS,
+        textureHeight: BOUNDS,
+        color: 0x3366ff
+    });
+
+    water.rotation.x = - Math.PI / 2;
+    water.matrixAutoUpdate = false;
+    water.updateMatrix();
+
+    water2.rotation.x = - Math.PI / 2;
+    water2.matrixAutoUpdate = false;
+    water2.updateMatrix();
 
 
+    const normalMap0 = await loadTexture( '/js/water/Water_1_M_Normal.jpg' );
+    const normalMap1 = await loadTexture( '/js/water/Water_2_M_Normal.jpg' );
+    normalMap0.wrapS = normalMap0.wrapT = THREE.RepeatWrapping;
+    normalMap1.wrapS = normalMap1.wrapT = THREE.RepeatWrapping;
+    const textureMatrix = new THREE.Matrix4();
+    textureMatrix.set(
+        0.5, 0.0, 0.0, 0.5,
+        0.0, 0.5, 0.0, 0.5,
+        0.0, 0.0, 0.5, 0.5,
+        0.0, 0.0, 0.0, 1.0
+    );
     waterMaterial = new THREE.ShaderMaterial( {
         uniforms: THREE.UniformsUtils.merge( [
             THREE.ShaderLib[ 'phong' ].uniforms,
             {
                 'heightmap': { value: null },
+                'originmap': { value: null },
+                'unit': { value: 1./BOUNDS.toFixed(1) },
                 'buildingmap': { value: null },
                 'setilmap' : {value: setilmapTexture},
                 'setilView' :  {value: setilView },
+                'uvmap' :  {value: null },
+                'thismap' :  {value: null },
+                'tNormalMap0' :  {value: normalMap0 },
+                'tNormalMap1' :  {value: normalMap1 },
+                'config' : {value: new THREE.Vector4() },
+                'textureMatrix' : {value: textureMatrix },
             }
         ] ),
         vertexShader: waterVertexShader,
@@ -964,18 +1005,69 @@ async function initWater() {
     waterMaterial.uniforms[ 'specular' ].value = new THREE.Color( 0x111111 );
     waterMaterial.uniforms[ 'shininess' ].value = Math.max( 50, 1e-4 );
     waterMaterial.uniforms[ 'opacity' ].value = 1.0;
+    waterMaterial.uniforms[ 'config' ].value.x = 0.0;
+    waterMaterial.uniforms[ 'config' ].value.y = halfCycle;
+    waterMaterial.uniforms[ 'config' ].value.z = halfCycle;
+    waterMaterial.uniforms[ 'config' ].value.w = 1.0;
 
     // Defines
     terrainMaterial.defines.WIDTH = WIDTH.toFixed( 1 );
     terrainMaterial.defines.BOUNDS = BOUNDS.toFixed( 1 );
     waterMaterial.defines.WIDTH = WIDTH.toFixed( 1 );
     waterMaterial.defines.BOUNDS = BOUNDS.toFixed( 1 );
+    waterMaterial.defines.resolution = 'vec2( ' + BOUNDS.toFixed( 1 ) + ', ' + BOUNDS.toFixed( 1 ) + ' )';
  
 
     waterMesh = new THREE.Mesh( geometry, waterMaterial );
     waterMesh.rotation.x = - Math.PI / 2;
     waterMesh.matrixAutoUpdate = false;
     waterMesh.updateMatrix();
+
+    // waterRenderTarget = new THREE.WebGLRenderTarget( BOUNDS, BOUNDS, {
+    //     wrapS: THREE.ClampToEdgeWrapping,
+    //     wrapT: THREE.ClampToEdgeWrapping,
+    //     minFilter: THREE.LinearFilter,
+    //     magFilter: THREE.LinearFilter,
+    // } );
+
+    // let scope = waterMesh;
+    // waterMesh.onBeforeRender = function (renderer, scene, camera){
+    //     // Render
+    //     const currentRenderTarget = renderer.getRenderTarget();
+
+    //     const currentXrEnabled = renderer.xr.enabled;
+    //     const currentShadowAutoUpdate = renderer.shadowMap.autoUpdate;
+
+    //     scope.visible = false;
+
+    //     renderer.xr.enabled = false; // Avoid camera modification and recursion
+    //     renderer.shadowMap.autoUpdate = false; // Avoid re-computing shadows
+
+    //     renderer.setRenderTarget( waterRenderTarget );
+
+    //     renderer.state.buffers.depth.setMask( true ); // make sure the depth buffer is writable so it can be properly cleared, see #18897
+
+    //     if ( renderer.autoClear === false ) renderer.clear();
+    //     renderer.render( scene, camera );
+
+    //     scope.visible = true;
+
+    //     renderer.xr.enabled = currentXrEnabled;
+    //     renderer.shadowMap.autoUpdate = currentShadowAutoUpdate;
+
+    //     renderer.setRenderTarget( currentRenderTarget );
+
+    //     // Restore viewport
+
+    //     const viewport = camera.viewport;
+
+    //     if ( viewport !== undefined ) {
+
+    //         renderer.state.viewport( viewport );
+
+    //     }
+    // }
+
 
     terrainMesh = new THREE.Mesh( geometry, terrainMaterial );
     terrainMesh.rotation.x = - Math.PI / 2;
@@ -986,6 +1078,7 @@ async function initWater() {
 
     scene.add( waterMesh );
     //scene.add(water);
+    //scene.add(water2);
     scene.add(terrainMesh);
 
     // THREE.Mesh just for mouse raycasting
@@ -1024,7 +1117,7 @@ async function initWater() {
         sun.setFromSphericalCoords( 1, phi, theta );
 
         sky.material.uniforms[ 'sunPosition' ].value.copy( sun );
-        //water.material.uniforms[ 'sunDirection' ].value.copy( sun ).normalize();
+        water.material.uniforms[ 'sunDirection' ].value.copy( sun ).normalize();
 
         if ( renderTarget !== undefined ) renderTarget.dispose();
 
@@ -1057,6 +1150,7 @@ let originmap;
 let drainmap;
 let outfallmap;
 let infilmap;
+let uvmap;
 
 async function setCompute(terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data){
     
@@ -1074,9 +1168,10 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
     originmap = gpuCompute.createTexture();
     buildingmap = gpuCompute.createTexture();
     infilmap = gpuCompute.createTexture();
+    uvmap = gpuCompute.createTexture();
 
     fillTexture( heightmap, originmap, buildingmap, infilmap, terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data); 
-    
+    makeUvMap(uvmap);
     //heightmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
     //originmap.flipY = true; //위성사진 y값을 거꿀로 바꿈
 
@@ -1130,9 +1225,16 @@ async function setCompute(terrainData, buildingData, streamData, surf_rough_Data
 
     
     terrainMaterial.uniforms[ 'originmap' ].value = originmap;
-    // water.material.uniforms[ 'unit' ].value = 1.0/BOUNDS.toFixed(1);
-    // water.material.uniforms[ 'originmap' ].value = originmap;
-    // water.material.uniforms[ 'buildingmap' ].value = buildingmap;
+    water.material.uniforms[ 'unit' ].value = 1.0/BOUNDS.toFixed(1);
+    water.material.uniforms[ 'originmap' ].value = originmap;
+    water.material.uniforms[ 'buildingmap' ].value = buildingmap;
+    water2.material.uniforms[ 'unit' ].value = 1.0/BOUNDS.toFixed(1);
+    water2.material.uniforms[ 'originmap' ].value = originmap;
+    water2.material.uniforms[ 'buildingmap' ].value = buildingmap;
+    water2.material.uniforms[ 'setilmap' ].value = setilmapTexture;
+    waterMesh.material.uniforms[ 'unit' ].value = 1.0/BOUNDS.toFixed(1);
+    waterMesh.material.uniforms[ 'originmap' ].value = originmap;
+    waterMesh.material.uniforms[ 'buildingmap' ].value = buildingmap;
 
     const error = gpuCompute.init();
     if ( error !== null ) { 
@@ -1250,6 +1352,47 @@ function fillTexture( heightmap, originmap, buildingmap, infilmap, terrainData, 
         }
     }
 
+}
+
+function makeUvMap(uvmap){
+    const uvmap_pixcels = uvmap.image.data;
+
+    //const width_half = BOUNDS / 2;
+    //const height_half = BOUNDS / 2;
+
+    const gridX = Math.floor( BOUNDS-1 );
+    const gridY = Math.floor( BOUNDS-1 );
+
+    const gridX1 = gridX + 1;
+    const gridY1 = gridY + 1;
+
+    //const segment_width = BOUNDS / gridX;
+    //const segment_height = BOUNDS / gridY;
+    
+    //const uvs = [];
+
+    //let cnt = 0;
+    for ( let iy = 0; iy < gridY1; iy ++ ) {
+
+        //const y = iy * segment_height - height_half;
+
+        for ( let ix = 0; ix < gridX1; ix ++ ) {
+
+            //const x = ix * segment_width - width_half;
+            
+            let rx =  ix / gridX;
+            let ry =  iy / gridY;
+
+            let pos = xyPos(ix,iy);
+           
+            uvmap_pixcels[pos] = rx;
+            uvmap_pixcels[pos+1] = ry;
+
+            //console.log(cnt, rx, ry);
+            //cnt++;
+        }
+
+    }
 }
 
 function onWindowResize() {
@@ -1742,16 +1885,52 @@ function convTime(){
 async function render() {
     await compute();
     terrainMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex ].texture; 
-    //water.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex ].texture;
-    //water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
+    water.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex ].texture;
+    water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
+    water2.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex ].texture;
+
     waterMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex ].texture;
+    waterMaterial.uniforms[ 'uvmap' ].value = uvmap;
 
     rainRender();
+    updateFlow();
     // Render
     //renderer.setRenderTarget( null );
+    //let lv = renderer.getActiveMipmapLevel()
+    //debugger
     renderer.render( scene, camera );
+   
+    //waterMaterial.uniforms[ 'thismap' ].value = waterRenderTarget.texture;
     
     pxv.innerText = cube.position.x;
     pyv.innerText = cube.position.y;
     pzv.innerText = cube.position.z;
+
+    
+}
+
+let flowSpeed = 0.03;
+function updateFlow() {
+
+    const delta = clock.getDelta();
+    const config = waterMaterial.uniforms[ 'config' ];
+
+    config.value.x += flowSpeed * delta; // flowMapOffset0
+    config.value.y = config.value.x + halfCycle; // flowMapOffset1
+
+    // Important: The distance between offsets should be always the value of "halfCycle".
+    // Moreover, both offsets should be in the range of [ 0, cycle ].
+    // This approach ensures a smooth water flow and avoids "reset" effects.
+
+    if ( config.value.x >= cycle ) {
+
+        config.value.x = 0;
+        config.value.y = halfCycle;
+
+    } else if ( config.value.y >= cycle ) {
+
+        config.value.y = config.value.y - cycle;
+
+    }
+
 }

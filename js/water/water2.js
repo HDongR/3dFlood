@@ -21,7 +21,7 @@ import { Refractor } from '../jsm/objects/Refractor.js';
  *
  */
 
-class Water extends Mesh {
+class Water2 extends Mesh {
 
 	constructor( geometry, options = {} ) {
 
@@ -39,13 +39,12 @@ class Water extends Mesh {
 		const clipBias = options.clipBias || 0;
 		const flowDirection = options.flowDirection || new Vector2( 1, 0 );
 		const flowSpeed = options.flowSpeed || 0.03;
-		const reflectivity = options.reflectivity || 0.02;
-		const scale = options.scale || 1;
-		const shader = options.shader || Water.WaterShader;
+		const reflectivity = options.reflectivity || 0.52;
+		const scale = options.scale || 0.1;
+		const shader = options.shader || Water2.WaterShader;
 
 		const textureLoader = new TextureLoader();
 
-		const flowMap = options.flowMap || undefined;
 		const normalMap0 = options.normalMap0 || textureLoader.load( '/js/water/Water_1_M_Normal.jpg' );
 		const normalMap1 = options.normalMap1 || textureLoader.load( '/js/water/Water_2_M_Normal.jpg' );
 
@@ -89,31 +88,17 @@ class Water extends Mesh {
 
 		this.material = new ShaderMaterial( {
 			uniforms: UniformsUtils.merge( [
-				UniformsLib[ 'fog' ],
+				{'setilView' : {value: true }},
 				shader.uniforms
 			] ),
 			vertexShader: shader.vertexShader,
 			fragmentShader: shader.fragmentShader,
 			transparent: true,
-			fog: true
 		} );
 
-		if ( flowMap !== undefined ) {
+	
 
-			this.material.defines.USE_FLOWMAP = '';
-			this.material.uniforms[ 'tFlowMap' ] = {
-				type: 't',
-				value: flowMap
-			};
-
-		} else {
-
-			this.material.uniforms[ 'flowDirection' ] = {
-				type: 'v2',
-				value: flowDirection
-			};
-
-		}
+		
 
 		// maps
 
@@ -130,6 +115,7 @@ class Water extends Mesh {
 		this.material.uniforms[ 'color' ].value = color;
 		this.material.uniforms[ 'reflectivity' ].value = reflectivity;
 		this.material.uniforms[ 'textureMatrix' ].value = textureMatrix;
+		this.material.uniforms[ 'setilView' ].value = true;
 
 		// inital values
 
@@ -203,13 +189,30 @@ class Water extends Mesh {
 
 }
 
-Water.WaterShader = {
+Water2.WaterShader = {
 
 	uniforms: {
-		'heightmap':{
-			value: null,
-		},
 
+		'heightmap': {
+			type: 't',
+			value: null
+		},
+		'originmap': {
+			type: 't',
+			value: null
+		},
+		'buildingmap': {
+			type: 't',
+			value: null
+		},
+		'setilmap': {
+			type: 't',
+			value: null
+		},
+		'unit': {
+			type: 'f',
+			value: 0
+		},
 		'color': {
 			type: 'c',
 			value: null
@@ -253,9 +256,20 @@ Water.WaterShader = {
 	},
 
 	vertexShader: /* glsl */`
+
 		uniform sampler2D heightmap;
+
+		#define PHONG
+
+		varying vec3 vViewPosition;
+
+		#ifndef FLAT_SHADED
+
+			varying vec3 vNormal;
+
+		#endif
+
 		#include <common>
- 
 		#include <uv_pars_vertex>
 		#include <displacementmap_pars_vertex>
 		#include <envmap_pars_vertex>
@@ -271,11 +285,17 @@ Water.WaterShader = {
 		varying vec4 vCoord;
 		varying vec2 vUv;
 		varying vec3 vToEye;
-		varying vec3 vViewPosition;
+
 		void main() {
 
 			vUv = uv;
 			vCoord = textureMatrix * vec4( position, 1.0 );
+
+			vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+			vToEye = cameraPosition - worldPosition.xyz;
+
+			//vec4 mvPosition =  viewMatrix * worldPosition; // used in fog_vertex
+			//gl_Position = projectionMatrix * mvPosition;
 
 			#include <uv_vertex>
 			#include <color_vertex>
@@ -290,21 +310,17 @@ Water.WaterShader = {
 			#include <skinnormal_vertex>
 			#include <defaultnormal_vertex>
 
-			//vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
-			//vToEye = cameraPosition - worldPosition.xyz;
+		#ifndef FLAT_SHADED // Normal computed with derivatives when FLAT_SHADED
 
-			//vec4 mvPosition =  viewMatrix * worldPosition; // used in fog_vertex
+			vNormal = normalize( transformedNormal );
+
+		#endif
+
 
 			vec4 data = texture2D( heightmap, uv );
-			float height = data.z > 0.0 ? data.z + data.w : 0.0; 
+			float height = data.z > 0.0 ? data.z + data.w : 0.0;
+			
 			vec3 transformed = vec3( position.x, position.y, height);
-
-			//mvPosition.z = height;
-
-			//gl_Position = projectionMatrix * mvPosition;
-
-			//#include <logdepthbuf_vertex>
-			//#include <fog_vertex>
 
 			#include <morphtarget_vertex>
 			#include <skinning_vertex>
@@ -319,25 +335,24 @@ Water.WaterShader = {
 			#include <envmap_vertex>
 			#include <shadowmap_vertex>
 
-
 		}`,
 
 	fragmentShader: /* glsl */`
+
 		uniform sampler2D heightmap;
+		uniform sampler2D buildingmap;
+		uniform bool setilView;
+		uniform float unit;
+		uniform sampler2D setilmap; 
+
 		#include <common>
-		#include <fog_pars_fragment>
 		#include <logdepthbuf_pars_fragment>
 
 		uniform sampler2D tReflectionMap;
 		uniform sampler2D tRefractionMap;
 		uniform sampler2D tNormalMap0;
 		uniform sampler2D tNormalMap1;
-
-		#ifdef USE_FLOWMAP
-			uniform sampler2D tFlowMap;
-		#else
-			uniform vec2 flowDirection;
-		#endif
+			
 
 		uniform vec3 color;
 		uniform float reflectivity;
@@ -346,6 +361,8 @@ Water.WaterShader = {
 		varying vec4 vCoord;
 		varying vec2 vUv;
 		varying vec3 vToEye;
+
+		#define discardWaterHeight 0.1
 
 		void main() {
 
@@ -359,13 +376,9 @@ Water.WaterShader = {
 			vec3 toEye = normalize( vToEye );
 
 			// determine flow direction
-			vec2 flow;
-			#ifdef USE_FLOWMAP
-				flow = texture2D( heightmap, vUv ).xy * 2.0 - 1.0;
-			#else
-				flow = flowDirection;
-			#endif
-			flow.x *= - 1.0;
+			vec2 flow = texture2D( heightmap, vUv ).xy * 2.0 - 1.0;
+			//flow *= 1000.;
+			//flow.x *= - 1.0;
 
 			// sample normal maps (distort uvs with flowdata)
 			vec4 normalColor0 = texture2D( tNormalMap0, ( vUv * scale ) + flow * flowMapOffset0 );
@@ -387,18 +400,111 @@ Water.WaterShader = {
 			vec2 uv = coord.xy + coord.z * normal.xz * 0.05;
 
 			vec4 reflectColor = texture2D( tReflectionMap, vec2( 1.0 - uv.x, uv.y ) );
-			//vec4 refractColor = texture2D( tRefractionMap, uv );
+			vec4 refractColor = texture2D( tRefractionMap, uv );
+
+
+			vec4 data = texture2D(heightmap, vUv); 
+	
+			if(data.z > discardWaterHeight){
+								
+				vec2 posLeft = vUv + vec2( - unit, 0.0 );
+				vec2 posRight = vUv + vec2( unit, 0.0  );
+				vec2 posTop = vUv + vec2( 0.0, unit );
+				vec2 posBottom = vUv + vec2( 0.0, - unit );
+		
+				vec2 posRightTop = vUv + vec2( unit, unit );
+				vec2 posRightBottom = vUv + vec2( unit, - unit );
+				vec2 posLeftTop = vUv + vec2( - unit, unit );
+				vec2 posLeftBottom = vUv + vec2( - unit, - unit );
+		
+				vec4 _pos = texture2D(buildingmap, vUv);
+		
+				vec4 _posLeft = texture2D(buildingmap, posLeft);
+				vec4 _posRight = texture2D(buildingmap, posRight);
+				vec4 _posTop = texture2D(buildingmap, posTop);
+				vec4 _posBottom = texture2D(buildingmap, posBottom);
+				vec4 h_posLeft = texture2D(heightmap, posLeft);
+				vec4 h_posRight = texture2D(heightmap, posRight);
+				vec4 h_posTop = texture2D(heightmap, posTop);
+				vec4 h_posBottom = texture2D(heightmap, posBottom);
+				 
+				vec4 _posRightTop = texture2D(buildingmap, posRightTop);
+				vec4 _posRightBottom = texture2D(buildingmap, posRightBottom);
+				vec4 _posLeftTop = texture2D(buildingmap, posLeftTop);
+				vec4 _posLeftBottom = texture2D(buildingmap, posLeftBottom);
+				vec4 h_posRightTop = texture2D(heightmap, posRightTop);
+				vec4 h_posRightBottom = texture2D(heightmap, posRightBottom);
+				vec4 h_posLeftTop = texture2D(heightmap, posLeftTop);
+				vec4 h_posLeftBottom = texture2D(heightmap, posLeftBottom);
+		
+				if(
+					_pos.x > 0.
+					&&
+					_posLeft.x > 0.
+					&&
+					_posRight.x > 0.
+					&&
+					_posTop.x > 0.
+					&&
+					_posBottom.x > 0.
+					&&
+					_posRightTop.x > 0.
+					&&
+					_posRightBottom.x > 0.
+					&&
+					_posLeftTop.x > 0.
+					&&
+					_posLeftBottom.x > 0.
+					){
+					
+				}else if(_posLeft.x > 0. && h_posLeft.z <= discardWaterHeight){
+					discard;
+				}else if(_posRight.x > 0. && h_posRight.z <= discardWaterHeight){
+					discard;
+				}else if(_posTop.x > 0. && h_posTop.z <= discardWaterHeight){
+					discard;
+				}else if(_posBottom.x > 0. && h_posBottom.z <= discardWaterHeight){
+					discard;
+				}
+		
+				else if(_posRightTop.x > 0. && h_posRightTop.z <= discardWaterHeight){
+					discard;
+				}
+				else if(_posRightBottom.x > 0. && h_posRightBottom.z <= discardWaterHeight){
+					discard;
+				}
+				else if(_posLeftTop.x > 0. && h_posLeftTop.z <= discardWaterHeight){
+					discard;
+				}
+				else if(_posLeftBottom.x > 0. && h_posLeftBottom.z <= discardWaterHeight){
+					discard;
+				}
+			}
+			if(data.z <= discardWaterHeight){
+				discard;
+			}
 
 			// multiply water color with the mix of both textures
-			//gl_FragColor = vec4( color, 1.0 ) * mix( refractColor, reflectColor, reflectance );
-			gl_FragColor = vec4( color, 1.0 ) *  reflectColor;
+			vec4 originColor = vec4( color, 1.0 ) * mix( refractColor, reflectColor, reflectance );
+			
+			float alpha = mix(0., 1., clamp(data.z, 0., 1.));
+	
+			if(setilView){
+				vec3 mx = vec3(texture2D( setilmap, vUv));
+				vec3 color = mix(mx, originColor.rgb, alpha);
+				gl_FragColor = vec4(color, 1.);
+			}else{
+				gl_FragColor.xyz = gl_FragColor.rgb;
+			}
+			//gl_FragColor.a = 1.;
+
+			
+
 			#include <tonemapping_fragment>
 			#include <colorspace_fragment>
-			#include <fog_fragment>
-			//gl_FragColor = vec4( 1.0,1.0,1.0, 1.0 );// * mix( refractColor, reflectColor, reflectance );
 
 		}`
 
 };
 
-export { Water };
+export { Water2 };

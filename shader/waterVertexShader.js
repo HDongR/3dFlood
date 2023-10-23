@@ -1,5 +1,6 @@
 export default `
 uniform sampler2D heightmap;
+uniform mat4 textureMatrix;
 
 #define PHONG
 
@@ -28,13 +29,17 @@ void main() {
     vUv = uv;
 
     vec2 cellSize = vec2( 1.0 / WIDTH, 1.0 / WIDTH );
-
+   
     #include <uv_vertex>
     #include <color_vertex>
 
     // # include <beginnormal_vertex>
     // Compute normal from heightmap
-    vec3 objectNormal = vec3(1.0, 1.0, 1.0 );
+    //vec3 objectNormal = vec3(1.0, 1.0, 1.0 );
+    vec3 objectNormal = vec3(
+        ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).w - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).w ) * WIDTH / BOUNDS,
+        ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).w - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).w ) * WIDTH / BOUNDS,
+        1.0 );
     //<beginnormal_vertex>
 
     #include <morphnormal_vertex>
