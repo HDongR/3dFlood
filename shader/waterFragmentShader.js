@@ -179,12 +179,12 @@ void main() {
 	// linear interpolate to get the final normal color
 	float flowLerp = abs( halfCycle - flowMapOffset0 ) / halfCycle;
 	vec4 normalColor = mix( normalColor0, normalColor1, flowLerp );
-
+	vec4 norm = normalize(normalColor);
 	float alpha = mix(0., 1., clamp(data.z, 0., 1.));
 	
 	if(setilView){
 		vec3 mx = vec3(texture2D( setilmap, vUv));
-		gl_FragColor = mix(vec4(mx,1.0), normalColor+gl_FragColor, alpha);
+		gl_FragColor = mix(vec4(mx,1.0), norm+gl_FragColor, alpha);
 	}else{
 		gl_FragColor = normalColor;
 	}
