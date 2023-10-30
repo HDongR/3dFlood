@@ -84,7 +84,7 @@ let rain_val = 40; //시간당 강수량 50mm/h;
 let MinSurfArea = 12.566;
 
 const clock = new THREE.Clock();
-const cycle = 0.15; // a cycle of a flow map phase
+const cycle = 0.3; // a cycle of a flow map phase
 const halfCycle = cycle * 0.5;
 
  
