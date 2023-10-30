@@ -184,7 +184,7 @@ void main() {
 	
 	if(setilView){
 		vec3 mx = vec3(texture2D( setilmap, vUv));
-		gl_FragColor = mix(vec4(mx,1.0), normalColor+gl_FragColor, alpha);
+		gl_FragColor = mix(vec4(mx,1.0), normalColor+gl_FragColor, 1.);
 	}else{
 		gl_FragColor = normalColor;
 	}

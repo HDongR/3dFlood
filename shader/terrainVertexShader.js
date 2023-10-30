@@ -40,17 +40,17 @@ void main() {
     // Compute normal from heightmap
     
     vec3 objectNormal;
-    if(buildingView){
-        objectNormal = vec3(
-            ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).w - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).w ) * WIDTH / BOUNDS,
-            ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).w - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).w ) * WIDTH / BOUNDS,
-            1.0 );
-    }else{
+    // if(buildingView){
+    //     objectNormal = vec3(
+    //         ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).w - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).w ) * WIDTH / BOUNDS,
+    //         ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).w - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).w ) * WIDTH / BOUNDS,
+    //         1.0 );
+    // }else{
         objectNormal = vec3(
             ( texture2D( originmap, uv + vec2( - cellSize.x, 0 ) ).w - texture2D( originmap, uv + vec2( cellSize.x, 0 ) ).w ) * WIDTH / BOUNDS,
             ( texture2D( originmap, uv + vec2( 0, - cellSize.y ) ).w - texture2D( originmap, uv + vec2( 0, cellSize.y ) ).w ) * WIDTH / BOUNDS,
             1.0 );
-    }
+    //}
     //<beginnormal_vertex>
 
     #include <morphnormal_vertex>
@@ -66,11 +66,11 @@ void main() {
 
     //# include <begin_vertex> 
     float r_height;
-    if(buildingView){
-        r_height = texture2D( heightmap, uv ).w;
-    }else{
+    //if(buildingView){
+    //    r_height = texture2D( heightmap, uv ).w;
+    //}else{
         r_height = texture2D( originmap, uv ).w;
-    }
+    //}
 
     //if(drainView){
      //   r_height += texture2D( drainmap, uv ).x;

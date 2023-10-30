@@ -37,8 +37,8 @@ void main() {
     // Compute normal from heightmap
     //vec3 objectNormal = vec3(1.0, 1.0, 1.0 );
     vec3 objectNormal = vec3(
-        ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).w - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).w ) * WIDTH / BOUNDS,
-        ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).w - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).w ) * WIDTH / BOUNDS,
+        ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).z - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).z ) * WIDTH / BOUNDS,
+        ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).z - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).z ) * WIDTH / BOUNDS,
         1.0 );
     //<beginnormal_vertex>
 

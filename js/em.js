@@ -3914,6 +3914,7 @@ var _get_linkage_type = Module['_get_linkage_type'] = (a0, a1, a2, a3, a4) => (_
 var _get_linkage_flow = Module['_get_linkage_flow'] = (a0, a1, a2, a3, a4, a5) => (_get_linkage_flow = Module['_get_linkage_flow'] = wasmExports['get_linkage_flow'])(a0, a1, a2, a3, a4, a5);
 var _node_getSurfArea = Module['_node_getSurfArea'] = (a0, a1) => (_node_getSurfArea = Module['_node_getSurfArea'] = wasmExports['node_getSurfArea'])(a0, a1);
 var _swmm_getLinkFlow = Module['_swmm_getLinkFlow'] = (a0) => (_swmm_getLinkFlow = Module['_swmm_getLinkFlow'] = wasmExports['swmm_getLinkFlow'])(a0);
+var _swmm_getLinkDepth = Module['_swmm_getLinkDepth'] = (a0) => (_swmm_getLinkDepth = Module['_swmm_getLinkDepth'] = wasmExports['swmm_getLinkDepth'])(a0);
 var _apply_linkage_flow = Module['_apply_linkage_flow'] = (a0, a1, a2, a3) => (_apply_linkage_flow = Module['_apply_linkage_flow'] = wasmExports['apply_linkage_flow'])(a0, a1, a2, a3);
 var _free = (a0) => (_free = wasmExports['free'])(a0);
 var _main = Module['_main'] = (a0, a1) => (_main = Module['_main'] = wasmExports['__main_argc_argv'])(a0, a1);

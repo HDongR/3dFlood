@@ -1023,6 +1023,12 @@ double DLLEXPORT   swmm_getLinkFlow(int index){
 }
 
 EMSCRIPTEN_KEEPALIVE
+double DLLEXPORT   swmm_getLinkDepth(int index){
+	double depth = Link[index].newDepth;
+    return depth;
+}
+
+EMSCRIPTEN_KEEPALIVE
 double DLLEXPORT apply_linkage_flow(int index, double h, double z, double cell_surf){
     double dt1d = solve_dt();
     double wse = z + h;

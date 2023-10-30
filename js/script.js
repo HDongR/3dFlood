@@ -26,3 +26,4 @@ const swmm_getRoutingStep = Module.cwrap('swmm_getRoutingStep', 'number', []);
 const swmm_getNodeID = Module.cwrap('swmm_getNodeID', 'string', ['number']);
 const swmm_getLinkID = Module.cwrap('swmm_getLinkID', 'string', ['number']);
 const swmm_getLinkFlow = Module.cwrap('swmm_getLinkFlow', 'number', ['number']);
+const swmm_getLinkDepth = Module.cwrap('swmm_getLinkDepth', 'number', ['number']);

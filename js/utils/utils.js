@@ -17,6 +17,15 @@ export function MercatorToWGS84(coord, height){
 	return proj1;
 }
 
+
+export function transformEpsg(src, dst, coord){
+	let proj1 = proj4("EPSG:"+src, "EPSG:"+dst, {
+		x: coord[0],
+		y: coord[1],
+	});
+	return proj1;
+}
+
 /** byteArray to string */
 export function intArrayToString(array) {
   var ret = [];

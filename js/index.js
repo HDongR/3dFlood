@@ -27,7 +27,8 @@ import { Sky } from './water/Sky.js';
 
 import { parseInp } from './utils/inp.js';
 import { apply_linkage_flow } from './swmm.js';
-import { lerp, inverseLerp, WGS84ToMercator, MercatorToWGS84, intArrayToString } from './utils/utils.js';
+import { transformEpsg } from './utils/utils.js';
+import { TDSLoader } from '../js/jsm/loaders/TDSLoader.js';
 
 
 // Texture width for simulation
@@ -79,12 +80,122 @@ let dtmax = 0.25;
 let dt = 0.25; //step dt
 let simTimeView = document.getElementById('simTimeView');
 let rain_per_sec = 3600;
-let rain_val = 1000; //시간당 강수량 50mm/h; 
+let rain_val = 40; //시간당 강수량 50mm/h; 
 let MinSurfArea = 12.566;
 
 const clock = new THREE.Clock();
 const cycle = 0.15; // a cycle of a flow map phase
 const halfCycle = cycle * 0.5;
+
+ 
+
+async function loadBuildings(){
+    
+    // Access and handle the files 
+    $('#loadBuilding').click(()=>{
+        var inp = document.getElementById("get-files");
+        for (let i = 0; i < inp.files.length; i++) {
+            let file = inp.files[i];
+            //console.log(file);
+            // do things with file
+
+            loadBuilding('asset/31/01.normal/', file.name);
+        }
+    });
+    
+    
+    proj4.defs('EPSG:5186', '+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs');
+
+    
+    const loader = new TDSLoader( );
+
+    let buildingBoundCheck = async (child)=>{
+        let index = 0;
+        for(let j=0; j<child.geometry.attributes.position.count; ++j){ 
+            let _x = child.geometry.attributes.position.array[index];
+            let _y = child.geometry.attributes.position.array[index+1];
+            let _z = child.geometry.attributes.position.array[index+2];
+            let oxy = transformEpsg('5186', '3857', [_x,_y]);
+
+
+            if(global_bbox[0] < oxy.x && global_bbox[1] < oxy.y 
+                && global_bbox[2] > oxy.x && global_bbox[3] > oxy.y){
+            }else{
+                return false;
+            }
+
+        } 
+
+        
+        return true;
+    }
+    
+    let loadBuilding = async (resourcePath, name)=>{
+    
+        loader.setResourcePath( resourcePath );
+        loader.load( resourcePath + name, function ( object ) {
+
+            object.traverse( function ( child ) {
+                if ( child.isMesh ) {
+                    //console.log(child);
+                    //child.material.specular.setScalar( 0.1 );
+                    //child.material.normalMap = normal;
+                    
+                    if(buildingBoundCheck(child)){
+                        let index = 0;
+                        for(let j=0; j<child.geometry.attributes.position.count; ++j){ 
+                            let _x = child.geometry.attributes.position.array[index];
+                            let _y = child.geometry.attributes.position.array[index+1];
+                            let _z = child.geometry.attributes.position.array[index+2];
+                            let oxy = transformEpsg('5186', '3857', [_x,_y]);
+                             
+                            
+                            
+                            let subX = centerXY[0] - oxy.x;
+                            let subY = centerXY[1] - oxy.y;
+
+                            let bX = subX / beX;
+                            let bY = subY / beY;
+                            
+                            let index_x = bX > 0 ? bX - BOUNDS_HALF : BOUNDS_HALF - bX;
+                            let index_y = bY > 0 ? bY - BOUNDS_HALF : BOUNDS_HALF - bY;
+                            index_x = Math.abs(index_x);
+                            index_y = Math.abs(index_y);
+                            //if(Math.round(index_x) >= BOUNDS || Math.round(index_y) >= BOUNDS){
+                            //    junction['containStudy'] = false;
+                            //}
+                            //console.log(jkey, index_x, index_y);
+
+                            let world_x = index_x - BOUNDS_HALF;
+                            let world_z = BOUNDS_HALF - index_y;
+
+                            child.geometry.attributes.position.array[index] = world_x;
+                            child.geometry.attributes.position.array[index+1] = child.geometry.attributes.position.array[index+2];
+                            child.geometry.attributes.position.array[index+2] = world_z;
+                           
+                            index+=3;
+
+                            
+                            
+                            
+                        } 
+                        
+
+                    
+                        child.geometry.attributes.position.needsUpdate = true;
+                        child.material.side = THREE.BackSide;
+                        
+                        scene.add( child ); 
+                    }
+                }
+
+            } );
+
+            //scene.add( object );
+
+        } );
+    }
+}
 
 async function parseTif(src, callback){
     const rawTiff = await GeoTIFF.fromUrl(src);
@@ -108,6 +219,7 @@ async function parseTif(src, callback){
 }
 
 async function parseGeoTiff(){
+
     const tifData = await parseTif('/asset/daejeon_1.tif', (bbox)=>{
         global_bbox = bbox;
         centerXY[0] = (bbox[0]+bbox[2])/2.0;
@@ -620,6 +732,7 @@ async function addDrainNetworkMesh(){
 
         scene.add(cylinder);
 
+        node.mesh = cylinder;
     };
 
 
@@ -708,6 +821,8 @@ async function addDrainNetworkMesh(){
         if(nextJunction.junction_kind == 'junction'){ //마지막 outfall은 그리지 않음.
             drawJunction(nextJunction, c_geom1, c_outOffset);
         }
+
+        conduit.mesh = cylinder;
     }
 }
 
@@ -731,7 +846,7 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
     dirSun.position.set( 300, 400, 175 );
     scene.add( dirSun );
 
-    const sun2 = new THREE.DirectionalLight( 0x40A040, 2.0 );
+    const sun2 = new THREE.DirectionalLight( 0xFFFFFF, 2.0 );
     sun2.position.set( - 100, 350, - 200 );
     scene.add( sun2 );
 
@@ -743,6 +858,7 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
     cube.position.x = 0;
     cube.position.y = 0;
     cube.position.z = 0;
+    cube.visible = false;
     scene.add( cube );
 
     const axesHelper = new THREE.AxesHelper( 5 );
@@ -870,6 +986,9 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
     
     await loadSwmm('/asset/swmm/drain_00387.inp');
     await addDrainNetworkMesh();
+
+    
+    await loadBuildings();
 }
 
 function weatherOn(check){
@@ -1475,6 +1594,14 @@ let elapsed_time = 0.0;
 let input_ptr = _malloc(8);
 Module.setValue(input_ptr, elapsed_time, "double");
 let dt1d = 0;
+let swmmColor = [
+    new THREE.Color(0.,1.,0.), //0~20%
+    new THREE.Color(0.,0.,1.), //21~40%
+    new THREE.Color(1.,1.,0.), //41~60%
+    new THREE.Color(1.,0.5,0.), //61~80%
+    new THREE.Color(1.,0,0.), //81~100%
+];
+
 function drainageStep(rt){
     let swmm_solve_dt = ()=>{
         let olds = swmm_getNewRoutingTime() / 1000.;
@@ -1535,125 +1662,33 @@ function drainageStep(rt){
             //let head = swmm_getNodeHead(i);
             //let crestElev = swmm_getNodeCrestElev(i);
             //let depth = swmm_getNodeDepth(i);
-
-            //int index, double h, double z, double cell_surf
             
             let pos = xyPos(node.index_x, node.index_y);
-            // let pos_left = xyPos(node.index_x-1, node.index_y);
-            // let pos_right = xyPos(node.index_x+1, node.index_y);
-            // let pos_top = xyPos(node.index_x, node.index_y+1);
-            // let pos_bottom = xyPos(node.index_x, node.index_y-1);
-            //let vx = readPixels[pos];
-            //let vy = readPixels[pos+1];
             let h = readPixels[pos+2];
             let z = readPixels[pos+3];
-            // let z_left = readPixels[pos_left+3];
-            // let z_right = readPixels[pos_right+3];
-            // let z_top = readPixels[pos_top+3];
-            // let z_bottom = readPixels[pos_bottom+3];
-
-            // if(Name == "J_219"){
-            //     let fullDepth = node.Dmax;
-            //     let depth = swmm_getNodeDepth(i) * FOOT;
-            //     let percent = depth / fullDepth * 100;
-            //     console.log('pre', Name, depth, fullDepth, percent);
-            // }
-
-            //if(Name == 'J_143'){
-            //let fixHeight = node.Invert+node.Dmax;
-
-            //console.log(Name, fixHeight, z, z-fixHeight)
-            //}
-            // let index_x = node['index_x'];
-            // let index_y = node['index_y'];
-            // let raw_index_x = node['raw_index_x'];
-            // let raw_index_y = node['raw_index_y'];
-
-            // let difX = index_x - raw_index_x;
-            // let difY = index_y - raw_index_y;
-
-            // let adifX = Math.abs(difX);
-            // let adifY = Math.abs(difY);
-
-            // let startX_Z = z;
-            // let endX_Z = z;
-            // if(difX > 0){
-            //     startX_Z = z_left;
-            //     endX_Z = z;
-            // }else if(difX < 0){
-            //     startX_Z = z;
-            //     endX_Z = z_right;
-            // }
-            // let rx_z = lerp(startX_Z, endX_Z, adifX);
-
-            // let startY_Z = z;
-            // let endY_Z = z;
-            // if(difY > 0){
-            //     startY_Z = z_bottom;
-            //     endY_Z = z;
-            // }else if(difY < 0){
-            //     startY_Z = z;
-            //     endY_Z = z_top;
-            // }
-            // let ry_z = lerp(startY_Z, endY_Z, adifY);
-
-            // let rz = (rx_z + ry_z)*0.5;
-
-            // console.log(z, rz, node.Invert, node.Dmax);
-
-            //let qdrain = apply_linkage_flow(i, h, z, node.Invert, beX*beY, dt1d);
             let qdrain = apply_linkage_flow(i, h, z, node.Invert, beX*beY, dt1d);
-            //if(qdrain > 0 && Name.startsWith('J')){
-                //console.log(Name, qdrain);
-                //debugger
-            //}
-            // if(Name == 'J_80'){
-            //     console.log(Name, qdrain);
-            // }
+           
             drainmap_pixcels[pos] = qdrain;
-            //drainmap_pixcels[pos+1] = 77.;//qdrain;
-            //drainmap_pixcels[pos+2] = dt1d_sum;//qdrain;
-            //drainmap_pixcels[pos+3] = 77.;//qdrain;
-            
 
-            
-            // if(Name == "J_219"){
-            //     let fullDepth = node.Dmax;
-            //     let depth = swmm_getNodeDepth(i) * FOOT;
-            //     let percent = depth / fullDepth * 100;
-            //     console.log('post', Name, depth, fullDepth, percent, qdrain);
-            // }
-            
-            //const node = Module.ccall('swmm_getNodeData','number',['number'], [i]);
-    
-            //let inflow = Module.getValue(node, 'double');
-            // let outflow = Module.getValue(node + 8, 'double');
-            //let head1 = Module.getValue(node + 16, 'double');
-            //let crestElev2 = Module.getValue(node + 24, 'double');
-            // let type = Module.getValue(node + 32, 'i32');
-            // let subIndex = Module.getValue(node + 36, 'i32');
-            //let InverElev = Module.getValue(node + 40, 'double');
-            // let InitDepth = Module.getValue(node + 48, 'double');
-            // let fullDepth = Module.getValue(node + 56, 'double');
-            // let surDepth = Module.getValue(node + 64, 'double');
-            // let pondedArea = Module.getValue(node + 72, 'double');
-            // let degree = Module.getValue(node + 80, 'i32');
-            // let updated = String.fromCharCode(Module.getValue(node + 84, 'i8'));
-            // let crownElev = Module.getValue(node + 88, 'double');
-            // let losses = Module.getValue(node + 96, 'double');
-            // let newVolume = Module.getValue(node + 104, 'double');
-            // let fullVolume = Module.getValue(node + 112, 'double');
-            // let overflow = Module.getValue(node + 120, 'double');
-            // let newDepth = Module.getValue(node + 128, 'double');
-            // let newLatFlow = Module.getValue(node + 136, 'double');
-            //_free(node);
-
-            //let rst1 = await swmm_open("/tmp/input.inp", "/tmp/Example1x.rpt", "/tmp/out.out");
-            
-            //console.log(res);
-            //console.log('Name:'+Name+" invEl:"+InverElev);
+            if(node.mesh){
+                let fullDepth = node.Dmax;
+                let depth = swmm_getNodeDepth(i) * FOOT;
+                let percent = depth / fullDepth * 100;
+                //console.log('post', Name, depth, fullDepth, percent, qdrain);
+                //if(qdrain > 0 )debugger
+                if(percent > 0 && percent <= 20){
+                    node.mesh.material.color = swmmColor[0];
+                }else if(percent > 20 && percent <= 40){
+                    node.mesh.material.color = swmmColor[1];
+                }else if(percent > 40 && percent <= 60){
+                    node.mesh.material.color = swmmColor[2];
+                }else if(percent > 60 && percent <= 80){
+                    node.mesh.material.color = swmmColor[3];
+                }else if(percent > 80 && percent <= Number.POSITIVE_INFINITY){
+                    node.mesh.material.color = swmmColor[4];
+                }
+            }
         }
-
         
         //let endTime = performance.now(); // 측정 종료
         //console.log(`apply_linkage 걸린 작업 시간은 총 ${endTime - startTime} 밀리초입니다.`);
@@ -1672,6 +1707,25 @@ function drainageStep(rt){
        
             if(!prevJunction || !nextJunction){
                continue; 
+            }
+
+            if(conduit.mesh){ 
+                let fullDepth = conduit.Geom1;
+                let depth = swmm_getLinkDepth(i) * FOOT;
+                let percent = depth / fullDepth * 100;
+                //console.log('post', Name, depth, fullDepth, percent, qdrain);
+                //if(qdrain > 0 )debugger
+                if(percent > 0 && percent <= 20){
+                    conduit.mesh.material.color = swmmColor[0];
+                }else if(percent > 20 && percent <= 40){
+                    conduit.mesh.material.color = swmmColor[1];
+                }else if(percent > 40 && percent <= 60){
+                    conduit.mesh.material.color = swmmColor[2];
+                }else if(percent > 60 && percent <= 80){
+                    conduit.mesh.material.color = swmmColor[3];
+                }else if(percent > 80 && percent <= Number.POSITIVE_INFINITY){
+                    conduit.mesh.material.color = swmmColor[4];
+                }
             }
             
             if(nextJunction.Name.startsWith('O')){
@@ -1902,9 +1956,9 @@ async function render() {
    
     //waterMaterial.uniforms[ 'thismap' ].value = waterRenderTarget.texture;
     
-    pxv.innerText = cube.position.x;
-    pyv.innerText = cube.position.y;
-    pzv.innerText = cube.position.z;
+    //pxv.innerText = cube.position.x;
+    //pyv.innerText = cube.position.y;
+    //pzv.innerText = cube.position.z;
 
     
 }

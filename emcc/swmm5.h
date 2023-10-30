@@ -126,6 +126,7 @@ int DLLEXPORT   swmm_getNodeHeads(double* heads);
 int DLLEXPORT   swmm_addNodeInflow(int index, double inflow);
 int DLLEXPORT   swmm_getLinkData(int index, linkData* data);
 double DLLEXPORT   swmm_getLinkFlow(int index);
+double DLLEXPORT   swmm_getLinkDepth(int index);
 
 // Coupling functions (L. Courty)
 int DLLEXPORT   swmm_setNodeFullDepth(int index, double depth);
