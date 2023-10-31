@@ -29,6 +29,7 @@ import { parseInp } from './utils/inp.js';
 import { apply_linkage_flow } from './swmm.js';
 import { transformEpsg } from './utils/utils.js';
 import { TDSLoader } from '../js/jsm/loaders/TDSLoader.js';
+import { mergeBufferGeometries } from '../js/jsm/utils/BufferGeometryUtils.js';
 
 
 // Texture width for simulation
@@ -87,20 +88,60 @@ const clock = new THREE.Clock();
 const cycle = 0.3; // a cycle of a flow map phase
 const halfCycle = cycle * 0.5;
 
- 
+let buildingObjs = [];
+const geometries = []; 
+const materials = [];
+
 
 async function loadBuildings(){
     
     // Access and handle the files 
-    $('#loadBuilding').click(()=>{
-        var inp = document.getElementById("get-files");
-        for (let i = 0; i < inp.files.length; i++) {
-            let file = inp.files[i];
-            //console.log(file);
-            // do things with file
-
-            loadBuilding('asset/31/01.normal/', file.name);
+    $('#loadBuilding').click(async ()=>{
+        let inp = document.getElementById("get-files");
+        let files = [];
+        for (let i = 0; i < inp.files.length; ++i) {
+            files.push(inp.files[i].name);
         }
+
+        let batch = 1000;
+        let fet = (lst)=>{
+            return new Promise((resolve, reject)=>{
+                lst.forEach(nn=>{
+                    loadBuilding('asset/31/', nn);
+                });
+
+                setTimeout(()=>{
+                    resolve();
+                }, 1000);
+            });
+        }
+        for (let slice_start = 0; slice_start < files.length; slice_start += batch) {
+            let slice_end = Math.min(slice_start + batch, files.length);
+            let sliceList = files.slice(slice_start, slice_end);
+            await fet(sliceList);
+        }
+        
+        // const mergedGeometry = mergeBufferGeometries(geometries, true);
+        // const mergedMesh = new THREE.Mesh(mergedGeometry, materials);
+        // scene.add(mergedMesh);
+        
+
+        let makeBuilding = async ()=>{
+            let res = await fetch('http://localhost:50014/commonApi/get3DBuilding.do',
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    sd_cd: '31',
+                    bbox:  [String(global_bbox[0]),String(global_bbox[1]),String(global_bbox[2]),String(global_bbox[3])],
+                }),
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            })
+            let data = await res.json();
+            console.log(data);
+        }
+        //makeBuilding();
     });
     
     
@@ -130,6 +171,50 @@ async function loadBuildings(){
         return true;
     }
     
+    let transBuilding = (position)=>{
+        let index = 0;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        let maxZ = Number.NEGATIVE_INFINITY;
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let minZ = Number.POSITIVE_INFINITY;
+
+        for(let j=0; j<position.count; ++j){ 
+            let _x = position.array[index];
+            let _y = position.array[index+1];
+            let _z = position.array[index+2];
+            maxX = Math.max(_x, maxX);
+            maxY = Math.max(_y, maxY);
+            maxZ = Math.max(_z, maxZ);
+            minX = Math.min(_x, minX);
+            minY = Math.min(_y, minY);
+            minZ = Math.min(_z, minZ);
+            index+=3;
+        }
+
+        let width = maxX - minX;
+        let height = maxY - minY;
+        let depth = maxZ - minZ;
+
+        let centerX = (maxX+minX)*0.5;
+        let centerY = (maxY+minY)*0.5;
+        //let centerZ = (maxZ+minZ)*0.5;
+
+        index = 0;
+        for(let j=0; j<position.count; ++j){
+            position.array[index] = position.array[index] - maxX + (width/2);
+            position.array[index+1] = position.array[index+1] - maxY + (height/2);
+            position.array[index+2] = position.array[index+2] - maxZ + (depth/2);
+
+            index+=3;
+        }
+        //console.log(position);
+
+        let oxy = transformEpsg('5186', '3857', [centerX, centerY]);
+        return {centerX:oxy.x, centerY:oxy.y, maxZ, minZ};
+    }
+
     let loadBuilding = async (resourcePath, name)=>{
     
         loader.setResourcePath( resourcePath );
@@ -137,61 +222,52 @@ async function loadBuildings(){
 
             object.traverse( function ( child ) {
                 if ( child.isMesh ) {
-                    //console.log(child);
-                    //child.material.specular.setScalar( 0.1 );
-                    //child.material.normalMap = normal;
                     
                     if(buildingBoundCheck(child)){
-                        let index = 0;
-                        for(let j=0; j<child.geometry.attributes.position.count; ++j){ 
-                            let _x = child.geometry.attributes.position.array[index];
-                            let _y = child.geometry.attributes.position.array[index+1];
-                            let _z = child.geometry.attributes.position.array[index+2];
-                            let oxy = transformEpsg('5186', '3857', [_x,_y]);
-                             
-                            
-                            
-                            let subX = centerXY[0] - oxy.x;
-                            let subY = centerXY[1] - oxy.y;
+                        let {centerX, centerY, maxZ, minZ} = transBuilding(child.geometry.attributes.position);
+ 
+                        let subX = centerXY[0] - centerX;
+                        let subY = centerXY[1] - centerY;
 
-                            let bX = subX / beX;
-                            let bY = subY / beY;
-                            
-                            let index_x = bX > 0 ? bX - BOUNDS_HALF : BOUNDS_HALF - bX;
-                            let index_y = bY > 0 ? bY - BOUNDS_HALF : BOUNDS_HALF - bY;
-                            index_x = Math.abs(index_x);
-                            index_y = Math.abs(index_y);
-                            //if(Math.round(index_x) >= BOUNDS || Math.round(index_y) >= BOUNDS){
-                            //    junction['containStudy'] = false;
-                            //}
-                            //console.log(jkey, index_x, index_y);
-
-                            let world_x = index_x - BOUNDS_HALF;
-                            let world_z = BOUNDS_HALF - index_y;
-
-                            child.geometry.attributes.position.array[index] = world_x;
-                            child.geometry.attributes.position.array[index+1] = child.geometry.attributes.position.array[index+2];
-                            child.geometry.attributes.position.array[index+2] = world_z;
-                           
-                            index+=3;
-
-                            
-                            
-                            
-                        } 
+                        let bX = subX / beX;
+                        let bY = subY / beY;
                         
+                        let index_x = bX > 0 ? bX - BOUNDS_HALF : BOUNDS_HALF - bX;
+                        let index_y = bY > 0 ? bY - BOUNDS_HALF : BOUNDS_HALF - bY;
+                        index_x = Math.abs(index_x);
+                        index_y = Math.abs(index_y);
 
-                    
+                        let world_x = index_x - BOUNDS_HALF;
+                        let world_z = BOUNDS_HALF - index_y;
+
+                        child.position.x = world_x;
+                        child.position.y = minZ + ((maxZ-minZ)*0.5 * ((beX+beY)*0.5*0.1) );
+                        child.position.z = world_z;
+
+                        child.rotation.x = - Math.PI / 2;
+
+                        child.scale.x = beY * 0.1;
+                        child.scale.y = beX * 0.1;
+                        child.scale.z = ((beX+beY)*0.5) * 0.1;
+        
                         child.geometry.attributes.position.needsUpdate = true;
-                        child.material.side = THREE.BackSide;
-                        
-                        scene.add( child ); 
+                        child.material.side = THREE.DoubleSide;
+                        scene.add( child );
+                        buildingObjs.push(child);
+
+                        // const geom = child.geometry.clone()
+                        // geom.applyMatrix4( child.matrixWorld );
+                        // if(geom.attributes.hasOwnProperty('uv2')) {
+                        //     geometries2.push(geom);
+                        //     materials2.push(child.material);
+                        // } else {
+                        //     geometries.push(geom);
+                        //     materials.push(child.material);
+                        // }
                     }
                 }
 
             } );
-
-            //scene.add( object );
 
         } );
     }
@@ -256,7 +332,7 @@ async function loadSwmm(inpFile){
 
     
     await preProcessModel();
-    let p_inpText = await autoCollect(inp);
+    //let p_inpText = await autoCollect(inp);
     await initSwmm(inpText);
     
     async function autoCollect(p_inp){
@@ -826,12 +902,8 @@ async function addDrainNetworkMesh(){
     }
 }
 
-let cube;
-let pxv, pyv, pzv;
 async function init(terrainData, buildingData, streamData, surf_rough_Data, surf_infilmax_Data, surf_infilmin_Data) {
-    pxv = document.getElementById('px');
-    pyv = document.getElementById('py');
-    pzv = document.getElementById('pz');
+   
     container = document.createElement( 'div' );
     document.body.appendChild( container );
 
@@ -840,29 +912,24 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
     camera.lookAt( 0, 0, 0 );
 
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2( 0xcccccc, 0.0025 );
+    //scene.fog = new THREE.FogExp2( 0xcccccc, 0.0025 );
 
     const dirSun = new THREE.DirectionalLight( 0xFFFFFF, 3.0 );
     dirSun.position.set( 300, 400, 175 );
-    scene.add( dirSun );
+    scene.add( dirSun ); 
+
+    const hemiLight = new THREE.HemisphereLight( 0xffffff, 0xffffff, 2 );
+    hemiLight.color.setHSL( 0.6, 1, 0.6 );
+    hemiLight.groundColor.setHSL( 0.095, 1, 0.75 );
+    hemiLight.position.set( 0, 50, 0 );
+    scene.add( hemiLight );
 
     const sun2 = new THREE.DirectionalLight( 0xFFFFFF, 2.0 );
     sun2.position.set( - 100, 350, - 200 );
-    scene.add( sun2 );
+    scene.add( sun2 ); 
 
-    const geometry = new THREE.BoxGeometry(4,4,4);
-    cube = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( 0xff0000 ) );
-    
-    
-    //0,0, 300
-    cube.position.x = 0;
-    cube.position.y = 0;
-    cube.position.z = 0;
-    cube.visible = false;
-    scene.add( cube );
-
-    const axesHelper = new THREE.AxesHelper( 5 );
-    scene.add( axesHelper );
+    // const axesHelper = new THREE.AxesHelper( 5 );
+    // scene.add( axesHelper );
 
     renderer = new THREE.WebGLRenderer();
     renderer.setPixelRatio( window.devicePixelRatio );
@@ -883,17 +950,17 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
     controls.update();
     //controls.addEventListener( 'change', render );
 
-    transformControl = new TransformControls( camera, renderer.domElement );
+    //transformControl = new TransformControls( camera, renderer.domElement );
     //transformControl.addEventListener( 'change', render );
-    transformControl.addEventListener( 'dragging-changed', function ( event ) {
+    // transformControl.addEventListener( 'dragging-changed', function ( event ) {
 
-        controls.enabled = ! event.value;
+    //     controls.enabled = ! event.value;
 
-    } );
+    // } );
     
 
     
-    scene.add(transformControl);
+    //scene.add(transformControl);
 
     stats = new Stats();
     container.appendChild( stats.dom );
@@ -963,6 +1030,8 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
         console.log(check)
 
         terrainMaterial.uniforms[ 'buildingView' ].value = check;
+
+        buildingObjs.forEach(b=>b.visible = check);
     } );
     gui.add(drainController, 'drainView' ).name('관망').onChange( (check)=>{
         console.log(check)
@@ -1193,7 +1262,7 @@ async function initWater() {
     terrainMesh.matrixAutoUpdate = false;
     terrainMesh.updateMatrix();
 
-    transformControl.attach(cube);
+    //transformControl.attach(cube);
 
     scene.add( waterMesh );
     //scene.add(water);
