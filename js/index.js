@@ -30,7 +30,9 @@ import { apply_linkage_flow } from './swmm.js';
 import { transformEpsg } from './utils/utils.js';
 import { TDSLoader } from '../js/jsm/loaders/TDSLoader.js';
 import { mergeBufferGeometries } from '../js/jsm/utils/BufferGeometryUtils.js';
+const { MeshBVH, acceleratedRaycast } = window.MeshBVHLib;
 
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 // Texture width for simulation
 const WIDTH = 128;
@@ -48,9 +50,9 @@ let camera, scene, renderer, controls, transformControl;
 let terrainMaterial;
 let waterMaterial;
 let sky;
-const mouseCoords = new THREE.Vector2();
+const pointer = new THREE.Vector2();
 const raycaster = new THREE.Raycaster();
-
+raycaster.firstHitOnly = true;
 let waterMesh;
 let water;
 let water2;
@@ -73,7 +75,7 @@ let realHeight = 0;
 let beX = 0;
 let beY = 0;
 
-let initStreamHeight = 6; //초기 강의 수위 m
+let initStreamHeight = 0.3; //초기 강의 수위 m
 let cfl = 0.7;
 let infiltrationRate = 1.0; //침투능 효율
 let simTime = 0; //현재 시뮬레이션 걸린시간
@@ -81,7 +83,7 @@ let dtmax = 0.25;
 let dt = 0.25; //step dt
 let simTimeView = document.getElementById('simTimeView');
 let rain_per_sec = 3600;
-let rain_val = 40; //시간당 강수량 50mm/h; 
+let rain_val = 100; //시간당 강수량 50mm/h; 
 let MinSurfArea = 12.566;
 
 const clock = new THREE.Clock();
@@ -141,6 +143,7 @@ async function loadBuildings(){
             //gg.applyMatrix4(building.matrix.clone().invert());
             let materials = buildingObjs.map(m=>m.material)
             buildingMerge = new THREE.Mesh(gg, materials);
+            buildingMerge.geometry.boundsTree = new MeshBVH(buildingMerge.geometry);
             scene.add(buildingMerge);
             // const mergedGeometry = mergeBufferGeometries(geometries, true);
             // const mergedMesh = new THREE.Mesh(mergedGeometry, materials);
@@ -276,7 +279,7 @@ async function loadBuildings(){
                         child.scale.z = ((beX+beY)*0.5) * 0.1;
         
                         child.geometry.attributes.position.needsUpdate = true;
-                        child.material.side = THREE.DoubleSide;
+                        //child.material.side = THREE.DoubleSide;
                         //scene.add( child );
                         buildingObjs.push(child);
 
@@ -951,7 +954,7 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
 
     const sun2 = new THREE.DirectionalLight( 0xFFFFFF, 2.0 );
     sun2.position.set( - 100, 350, - 200 );
-    scene.add( sun2 ); 
+    //scene.add( sun2 ); 
 
     // const axesHelper = new THREE.AxesHelper( 5 );
     // scene.add( axesHelper );
@@ -1004,7 +1007,7 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
 
     } );
 
-    container.addEventListener( 'pointermove', onMouseMove);
+    container.addEventListener( 'mousemove', onMouseMove);
 
     window.addEventListener( 'resize', onWindowResize );
 
@@ -1641,7 +1644,9 @@ function getReadPixcel(log, rt, debug){
 const mouse = new THREE.Vector2();
 const onClickPosition = new THREE.Vector2();
 
-function onMouseMove( evt ) {
+function onMouseMove( event ) {
+    pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+    pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
     return;
     evt.preventDefault();
 
@@ -2038,10 +2043,10 @@ async function render() {
     water2.material.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex ].texture;
 
     waterMaterial.uniforms[ 'heightmap' ].value = renderTargets[currentRenderIndex ].texture;
-    waterMaterial.uniforms[ 'uvmap' ].value = uvmap;
+    //waterMaterial.uniforms[ 'uvmap' ].value = uvmap;
 
     rainRender();
-    updateFlow();
+    //updateFlow();
     // Render
     //renderer.setRenderTarget( null );
     //let lv = renderer.getActiveMipmapLevel()
@@ -2050,11 +2055,23 @@ async function render() {
    
     //waterMaterial.uniforms[ 'thismap' ].value = waterRenderTarget.texture;
     
-    //pxv.innerText = cube.position.x;
-    //pyv.innerText = cube.position.y;
-    //pzv.innerText = cube.position.z;
 
     
+    // if(buildingMerge){
+    //     raycaster.setFromCamera( pointer, camera );
+    //     const intersects = raycaster.intersectObjects( [buildingMerge], false );
+
+    //     if ( intersects.length > 0 ) {
+    //         //console.log(intersects);
+    //         intersects.forEach(i=>{
+    //             let c = Math.floor(Math.random()*16777215).toString(16);
+    //             let colour = new THREE.Color();
+    //             colour.setHex('0x'+c);
+
+    //             buildingMerge.material[i.face.materialIndex].color = colour;
+    //         });
+    //     }
+    // }
 }
 
 let flowSpeed = 0.03;
