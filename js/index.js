@@ -89,41 +89,65 @@ const cycle = 0.3; // a cycle of a flow map phase
 const halfCycle = cycle * 0.5;
 
 let buildingObjs = [];
-const geometries = []; 
-const materials = [];
-
+let buildingMerge;
 
 async function loadBuildings(){
     
     // Access and handle the files 
     $('#loadBuilding').click(async ()=>{
-        let inp = document.getElementById("get-files");
-        let files = [];
-        for (let i = 0; i < inp.files.length; ++i) {
-            files.push(inp.files[i].name);
-        }
+        let getfiles = async ()=>{
+            let inp = document.getElementById("get-files");
+            let files = [];
+            for (let i = 0; i < inp.files.length; ++i) {
+                files.push(inp.files[i].name);
+            }
 
-        let batch = 1000;
-        let fet = (lst)=>{
-            return new Promise((resolve, reject)=>{
-                lst.forEach(nn=>{
-                    loadBuilding('asset/31/', nn);
+            let batch = 1000;
+            let fet = (lst)=>{
+                return new Promise((resolve, reject)=>{
+                    lst.forEach(nn=>{
+                        loadBuilding('asset/31/', nn);
+                    });
+
+                    setTimeout(()=>{
+                        resolve();
+                    }, 1000);
                 });
+            }
+            for (let slice_start = 0; slice_start < files.length; slice_start += batch) {
+                let slice_end = Math.min(slice_start + batch, files.length);
+                let sliceList = files.slice(slice_start, slice_end);
+                await fet(sliceList);
+            }
 
-                setTimeout(()=>{
-                    resolve();
-                }, 1000);
-            });
-        }
-        for (let slice_start = 0; slice_start < files.length; slice_start += batch) {
-            let slice_end = Math.min(slice_start + batch, files.length);
-            let sliceList = files.slice(slice_start, slice_end);
-            await fet(sliceList);
+            let geoms=[];
+            for(let i=0; i<buildingObjs.length; ++i){
+                let building = buildingObjs[i];
+                building.updateMatrixWorld(true, true);
+                let geom = null;
+                building.traverse(e=>{
+                    if(e.isMesh){
+                        if(e.geometry.index){
+                            geom = e.geometry.toNonIndexed();
+                        }else{
+                            geom = e.geometry().clone();
+                        }
+                        geoms.push(geom);
+                    }
+                }); 
+                geom.applyMatrix4(building.matrixWorld) 
+            }
+            let gg = mergeBufferGeometries(geoms, true)
+            //gg.applyMatrix4(building.matrix.clone().invert());
+            let materials = buildingObjs.map(m=>m.material)
+            buildingMerge = new THREE.Mesh(gg, materials);
+            scene.add(buildingMerge);
+            // const mergedGeometry = mergeBufferGeometries(geometries, true);
+            // const mergedMesh = new THREE.Mesh(mergedGeometry, materials);
+            // scene.add(mergedMesh);
         }
         
-        // const mergedGeometry = mergeBufferGeometries(geometries, true);
-        // const mergedMesh = new THREE.Mesh(mergedGeometry, materials);
-        // scene.add(mergedMesh);
+       
         
 
         let makeBuilding = async ()=>{
@@ -141,6 +165,7 @@ async function loadBuildings(){
             let data = await res.json();
             console.log(data);
         }
+        getfiles();
         //makeBuilding();
     });
     
@@ -252,7 +277,7 @@ async function loadBuildings(){
         
                         child.geometry.attributes.position.needsUpdate = true;
                         child.material.side = THREE.DoubleSide;
-                        scene.add( child );
+                        //scene.add( child );
                         buildingObjs.push(child);
 
                         // const geom = child.geometry.clone()
@@ -1031,7 +1056,7 @@ async function init(terrainData, buildingData, streamData, surf_rough_Data, surf
 
         terrainMaterial.uniforms[ 'buildingView' ].value = check;
 
-        buildingObjs.forEach(b=>b.visible = check);
+        buildingMerge.visible = check;
     } );
     gui.add(drainController, 'drainView' ).name('관망').onChange( (check)=>{
         console.log(check)
